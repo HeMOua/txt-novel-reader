@@ -446,7 +446,11 @@ function openCatalog() {
     if (!catalogList.value) return
     const activeEl = catalogList.value.querySelector('.catalog-item.active')
     if (activeEl) {
-      activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      // 直接跳转，无滚动动画
+      const listRect = catalogList.value.getBoundingClientRect()
+      const itemRect = activeEl.getBoundingClientRect()
+      const offset = itemRect.top - listRect.top - (listRect.height / 2) + (itemRect.height / 2)
+      catalogList.value.scrollTop += offset
     }
   })
 }
@@ -490,20 +494,27 @@ function onSettingsChange() { saveSettings(settings.value) }
 function toggleAutoRead() { autoReading.value = !autoReading.value; autoReading.value ? startAutoRead() : stopAutoRead() }
 function startAutoRead() {
   stopAutoRead()
-  // 每帧滚动的像素数，根据速度级别（1-10）映射到 0.3~3 px/frame
-  function getPixelsPerFrame() {
+  if (!scrollArea.value) return
+  // 速度级别 1-10 → 18~180 px/s（稳定的连续推进）
+  function getPxPerSec() {
     const speed = settings.value.autoReadSpeed || 3
-    return 0.3 + (speed - 1) * (2.7 / 9)
+    return 18 + (speed - 1) * 18
   }
-  let accumulated = 0
-  function tick() {
-    if (!scrollArea.value) return
-    accumulated += getPixelsPerFrame()
-    if (accumulated >= 1) {
-      const px = Math.floor(accumulated)
-      scrollArea.value.scrollTop += px
-      accumulated -= px
-    }
+  // 用浮点累加避免每帧整数四舍五入造成的抖动
+  let virtualTop = scrollArea.value.scrollTop
+  let lastT = 0
+  function tick(t) {
+    if (!scrollArea.value) { autoReadRaf = null; return }
+    if (!lastT) { lastT = t; autoReadRaf = requestAnimationFrame(tick); return }
+    let dt = t - lastT
+    lastT = t
+    // 卡顿/切后台时帧间隔可能很大，限幅避免突跳
+    if (dt > 100) dt = 100
+    virtualTop += getPxPerSec() * (dt / 1000)
+    // 用户手动滚动或章节插入修正了 scrollTop 时，重新对齐虚拟位置
+    const actual = scrollArea.value.scrollTop
+    if (Math.abs(actual - virtualTop) > 4) virtualTop = actual
+    scrollArea.value.scrollTop = virtualTop
     autoReadRaf = requestAnimationFrame(tick)
   }
   autoReadRaf = requestAnimationFrame(tick)
