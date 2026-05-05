@@ -100,6 +100,7 @@
             <div class="slider-row"><label>行间距</label><input type="range" min="1" max="4" step="0.1" v-model.number="settings.lineHeight" @input="onSettingsChange" /><span>{{ settings.lineHeight.toFixed(1) }}</span></div>
             <div class="slider-row"><label>段间距</label><input type="range" min="0" max="40" step="2" v-model.number="settings.paragraphSpacing" @input="onSettingsChange" /><span>{{ settings.paragraphSpacing }}px</span></div>
             <div class="slider-row"><label>左右间距</label><input type="range" min="8" max="80" step="4" v-model.number="settings.leftMargin" @input="onSettingsChange" /><span>{{ settings.leftMargin }}px</span></div>
+            <div class="slider-row"><label>正文宽度</label><input type="range" min="40" max="100" step="5" v-model.number="settings.contentWidth" @input="onSettingsChange" /><span>{{ settings.contentWidth }}%</span></div>
           </div>
         </transition>
         <div class="settings-row theme-row">
@@ -113,6 +114,10 @@
             <span class="func-icon">{{ autoReading ? '⏸' : '▶️' }}</span>
             <span>{{ autoReading ? '暂停' : '自动阅读' }}</span>
           </button>
+          <div class="auto-mode-switch">
+            <button class="preset-btn" :class="{ active: settings.autoReadMode === 'scroll' }" @click="setAutoReadMode('scroll')">滚动</button>
+            <button class="preset-btn" :class="{ active: settings.autoReadMode === 'cover' }" @click="setAutoReadMode('cover')">覆盖</button>
+          </div>
           <div class="slider-row" v-if="autoReading" style="flex:1">
             <label>速度</label><input type="range" min="1" max="10" step="1" v-model.number="settings.autoReadSpeed" @input="onSettingsChange" /><span>{{ settings.autoReadSpeed }}</span>
           </div>
@@ -187,6 +192,7 @@ const contentStyle = computed(() => {
     paddingBottom: '80px',
     paddingLeft: settings.value.leftMargin + 'px',
     paddingRight: settings.value.leftMargin + 'px',
+    width: (settings.value.contentWidth || 80) + '%',
   }
 })
 
@@ -489,12 +495,27 @@ function toggleNightMode() {
   onSettingsChange()
 }
 function onSettingsChange() { saveSettings(settings.value) }
+function setAutoReadMode(mode) {
+  if (settings.value.autoReadMode === mode) return
+  settings.value.autoReadMode = mode
+  onSettingsChange()
+  if (autoReading.value) { stopAutoRead(); startAutoRead() }
+}
 
 // ========== 自动阅读 ==========
+let coverOverlayEl = null
+
 function toggleAutoRead() { autoReading.value = !autoReading.value; autoReading.value ? startAutoRead() : stopAutoRead() }
 function startAutoRead() {
   stopAutoRead()
   if (!scrollArea.value) return
+  if (settings.value.autoReadMode === 'cover') {
+    startCoverAutoRead()
+  } else {
+    startScrollAutoRead()
+  }
+}
+function startScrollAutoRead() {
   // 速度级别 1-10 → 18~180 px/s（稳定的连续推进）
   function getPxPerSec() {
     const speed = settings.value.autoReadSpeed || 3
@@ -519,8 +540,136 @@ function startAutoRead() {
   }
   autoReadRaf = requestAnimationFrame(tick)
 }
+
+function startCoverAutoRead() {
+  const scrollEl = scrollArea.value
+  const container = scrollEl.parentElement
+  if (!scrollEl || !container) return
+
+  // 创建覆盖层（覆盖 scroll 区域，与之同尺寸）
+  const overlay = document.createElement('div')
+  overlay.className = 'cover-overlay'
+  Object.assign(overlay.style, {
+    position: 'absolute',
+    overflow: 'hidden',
+    pointerEvents: 'none',
+    zIndex: '15',
+    background: 'transparent',
+  })
+  const mask = document.createElement('div')
+  mask.className = 'cover-mask'
+  const maskBg = settings.value.nightMode ? '#1a1a1a' : (settings.value.bgColor || '#f5f0e8')
+  Object.assign(mask.style, {
+    position: 'absolute',
+    top: '0', left: '0', right: '0',
+    height: '0',
+    overflow: 'hidden',
+    background: maskBg,
+    willChange: 'height',
+  })
+  const cloneWrap = document.createElement('div')
+  cloneWrap.className = 'cover-clone-wrap'
+  mask.appendChild(cloneWrap)
+  overlay.appendChild(mask)
+  const line = document.createElement('div')
+  line.className = 'cover-line'
+  const lineBorder = settings.value.nightMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)'
+  const shadow1 = settings.value.nightMode ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.25)'
+  const shadow2 = settings.value.nightMode ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.15)'
+  Object.assign(line.style, {
+    position: 'absolute',
+    left: '0', right: '0',
+    top: '0',
+    height: '2px',
+    background: lineBorder,
+    boxShadow: `0 8px 16px ${shadow1}, 0 2px 6px ${shadow2}`,
+    transform: 'translateY(-1px)',
+    willChange: 'top',
+    pointerEvents: 'none',
+    zIndex: '2',
+  })
+  overlay.appendChild(line)
+  container.appendChild(overlay)
+  coverOverlayEl = overlay
+
+  function syncOverlayBox() {
+    const sr = scrollEl.getBoundingClientRect()
+    const cr = container.getBoundingClientRect()
+    overlay.style.top = (sr.top - cr.top) + 'px'
+    overlay.style.left = (sr.left - cr.left) + 'px'
+    overlay.style.width = sr.width + 'px'
+    overlay.style.height = sr.height + 'px'
+    cloneWrap.style.height = sr.height + 'px'
+  }
+  syncOverlayBox()
+
+  let H = scrollEl.clientHeight
+  let pageStart = 0
+
+  function snapshotNextPage() {
+    cloneWrap.innerHTML = ''
+    if (!contentEl.value) return
+    const clone = contentEl.value.cloneNode(true)
+    clone.style.position = 'absolute'
+    clone.style.left = '0'
+    clone.style.right = '0'
+    clone.style.top = `-${scrollEl.scrollTop + H}px`
+    clone.style.margin = '0 auto'
+    cloneWrap.appendChild(clone)
+  }
+  snapshotNextPage()
+
+  function tick(t) {
+    if (!autoReading.value || !scrollArea.value) {
+      cleanupCoverOverlay()
+      return
+    }
+    if (!pageStart) pageStart = t
+    const speed = settings.value.autoReadSpeed || 3
+    const pageDuration = Math.max(1200, (12 - speed) * 800)
+    const p = Math.min(1, (t - pageStart) / pageDuration)
+    const pct = (p * 100).toFixed(2) + '%'
+    mask.style.height = pct
+    line.style.top = pct
+    if (p >= 1) {
+      // 已到底部？终止
+      if (scrollEl.scrollTop + H >= scrollEl.scrollHeight - 1) {
+        autoReading.value = false
+        cleanupCoverOverlay()
+        return
+      }
+      // 推进一页
+      isRestoring = true
+      scrollEl.scrollTop = scrollEl.scrollTop + H
+      // 确保后续内容已加载
+      if (scrollEl.scrollTop + H >= scrollEl.scrollHeight - 200) {
+        appendChapterBelow()
+      }
+      requestAnimationFrame(() => {
+        isRestoring = false
+        H = scrollEl.clientHeight
+        syncOverlayBox()
+        snapshotNextPage()
+        mask.style.height = '0%'
+        line.style.top = '0%'
+        pageStart = 0
+        autoReadRaf = requestAnimationFrame(tick)
+      })
+      return
+    }
+    autoReadRaf = requestAnimationFrame(tick)
+  }
+  autoReadRaf = requestAnimationFrame(tick)
+}
+
+function cleanupCoverOverlay() {
+  if (autoReadRaf) { cancelAnimationFrame(autoReadRaf); autoReadRaf = null }
+  if (coverOverlayEl) { coverOverlayEl.remove(); coverOverlayEl = null }
+}
+
 function stopAutoRead() {
   if (autoReadRaf) { cancelAnimationFrame(autoReadRaf); autoReadRaf = null }
+  if (coverOverlayEl) { coverOverlayEl.remove(); coverOverlayEl = null }
 }
 
 // ========== 交互 ==========
@@ -606,7 +755,7 @@ onUnmounted(() => {
 }
 .reader-scroll { flex: 1; overflow-y: auto; scroll-behavior: auto; scrollbar-width: none; -ms-overflow-style: none; }
 .reader-scroll::-webkit-scrollbar { display: none; }
-.reader-content { max-width: 800px; margin: 0 auto; word-wrap: break-word; text-align: justify; user-select: text; }
+.reader-content { margin: 0 auto; word-wrap: break-word; text-align: justify; user-select: text; }
 
 /* 章节块 */
 .chapter-block { margin-bottom: 0; }
@@ -673,6 +822,7 @@ onUnmounted(() => {
 .slider-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #e67e22; cursor: pointer; }
 .slider-row span { min-width: 40px; text-align: right; font-size: 11px; }
 .extra-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.auto-mode-switch { display: flex; gap: 4px; }
 
 .slide-down-enter-active, .slide-down-leave-active { transition: transform 0.25s ease; }
 .slide-down-enter-from, .slide-down-leave-to { transform: translateY(-100%); }
