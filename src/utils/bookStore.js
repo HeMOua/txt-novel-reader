@@ -21,7 +21,7 @@ const DEFAULT_SETTINGS = {
   fontColor: '#2c2c2c',
   bgColor: '#f5f0e8',
   pageTurnMode: 'scroll', // scroll, slide
-  autoReadSpeed: 3,       // 自动阅读速度（行/秒）
+  autoReadSpeed: 30,      // 自动阅读速度（0~100）
   autoReadMode: 'scroll', // scroll, cover - 自动阅读方式
   contentWidth: 80,       // 正文区域宽度占窗口百分比 (40-100)
 }

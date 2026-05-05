@@ -97,10 +97,10 @@
         </div>
         <transition name="expand">
           <div v-if="showMoreSpacing" class="more-settings">
-            <div class="slider-row"><label>行间距</label><input type="range" min="1" max="4" step="0.1" v-model.number="settings.lineHeight" @input="onSettingsChange" /><span>{{ settings.lineHeight.toFixed(1) }}</span></div>
-            <div class="slider-row"><label>段间距</label><input type="range" min="0" max="40" step="2" v-model.number="settings.paragraphSpacing" @input="onSettingsChange" /><span>{{ settings.paragraphSpacing }}px</span></div>
-            <div class="slider-row"><label>左右间距</label><input type="range" min="8" max="80" step="4" v-model.number="settings.leftMargin" @input="onSettingsChange" /><span>{{ settings.leftMargin }}px</span></div>
-            <div class="slider-row"><label>正文宽度</label><input type="range" min="40" max="100" step="5" v-model.number="settings.contentWidth" @input="onSettingsChange" /><span>{{ settings.contentWidth }}%</span></div>
+            <div class="slider-row"><label>行间距</label><input type="range" min="1" max="4" step="0.05" v-model.number="settings.lineHeight" @input="onSettingsChange" /><span>{{ settings.lineHeight.toFixed(2) }}</span></div>
+            <div class="slider-row"><label>段间距</label><input type="range" min="0" max="40" step="1" v-model.number="settings.paragraphSpacing" @input="onSettingsChange" /><span>{{ settings.paragraphSpacing }}px</span></div>
+            <div class="slider-row"><label>左右间距</label><input type="range" min="8" max="80" step="1" v-model.number="settings.leftMargin" @input="onSettingsChange" /><span>{{ settings.leftMargin }}px</span></div>
+            <div class="slider-row"><label>正文宽度</label><input type="range" min="40" max="100" step="1" v-model.number="settings.contentWidth" @input="onSettingsChange" /><span>{{ settings.contentWidth }}%</span></div>
           </div>
         </transition>
         <div class="settings-row theme-row">
@@ -119,7 +119,7 @@
             <button class="preset-btn" :class="{ active: settings.autoReadMode === 'cover' }" @click="setAutoReadMode('cover')">覆盖</button>
           </div>
           <div class="slider-row" v-if="autoReading" style="flex:1">
-            <label>速度</label><input type="range" min="1" max="10" step="1" v-model.number="settings.autoReadSpeed" @input="onSettingsChange" /><span>{{ settings.autoReadSpeed }}</span>
+            <label>速度</label><input type="range" min="0" max="100" step="1" v-model.number="settings.autoReadSpeed" @input="onSettingsChange" /><span>{{ settings.autoReadSpeed }}</span>
           </div>
         </div>
       </div>
@@ -128,7 +128,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { getChapterText, calcProgress } from '../utils/chapterParser.js'
 import { getSettings, saveSettings, THEMES, LINE_HEIGHT_PRESETS, FONT_FAMILIES, updateProgress, flushProgress } from '../utils/bookStore.js'
 
@@ -504,6 +504,7 @@ function setAutoReadMode(mode) {
 
 // ========== 自动阅读 ==========
 let coverOverlayEl = null
+let autoReadPaused = false   // 菜单/设置面板打开时临时暂停
 
 function toggleAutoRead() { autoReading.value = !autoReading.value; autoReading.value ? startAutoRead() : stopAutoRead() }
 function startAutoRead() {
@@ -516,10 +517,10 @@ function startAutoRead() {
   }
 }
 function startScrollAutoRead() {
-  // 速度级别 1-10 → 18~180 px/s（稳定的连续推进）
+  // 速度级别 0-100 → 5~205 px/s（线性映射）
   function getPxPerSec() {
-    const speed = settings.value.autoReadSpeed || 3
-    return 18 + (speed - 1) * 18
+    const speed = Math.max(0, Math.min(100, settings.value.autoReadSpeed ?? 30))
+    return 5 + speed * 2
   }
   // 用浮点累加避免每帧整数四舍五入造成的抖动
   let virtualTop = scrollArea.value.scrollTop
@@ -604,7 +605,15 @@ function startCoverAutoRead() {
   syncOverlayBox()
 
   let H = scrollEl.clientHeight
+  let pageStep = computePageStep()
   let pageStart = 0
+
+  function computePageStep() {
+    const lineH = (settings.value.fontSize || 18) * (settings.value.lineHeight || 1.8)
+    if (!lineH || lineH <= 0) return scrollEl.clientHeight
+    const n = Math.max(1, Math.floor(scrollEl.clientHeight / lineH))
+    return n * lineH
+  }
 
   function snapshotNextPage() {
     cloneWrap.innerHTML = ''
@@ -613,7 +622,9 @@ function startCoverAutoRead() {
     clone.style.position = 'absolute'
     clone.style.left = '0'
     clone.style.right = '0'
-    clone.style.top = `-${scrollEl.scrollTop + H}px`
+    // 克隆体顶端对应原内容 (scrollTop + pageStep) 处，
+    // 这样 mask 揭示的第一行就是原视口底部那条被裁切的行
+    clone.style.top = `-${scrollEl.scrollTop + pageStep}px`
     clone.style.margin = '0 auto'
     cloneWrap.appendChild(clone)
   }
@@ -625,22 +636,24 @@ function startCoverAutoRead() {
       return
     }
     if (!pageStart) pageStart = t
-    const speed = settings.value.autoReadSpeed || 3
-    const pageDuration = Math.max(1200, (12 - speed) * 800)
+    const speed = Math.max(0, Math.min(100, settings.value.autoReadSpeed ?? 30))
+    // 0~100 → 11000~1000ms
+    const pageDuration = Math.max(800, 11000 - speed * 100)
     const p = Math.min(1, (t - pageStart) / pageDuration)
-    const pct = (p * 100).toFixed(2) + '%'
-    mask.style.height = pct
-    line.style.top = pct
+    // mask / 横线扫过整个视口高度，但内容只推进 pageStep
+    const px = (p * H).toFixed(2) + 'px'
+    mask.style.height = px
+    line.style.top = px
     if (p >= 1) {
       // 已到底部？终止
-      if (scrollEl.scrollTop + H >= scrollEl.scrollHeight - 1) {
+      if (scrollEl.scrollTop + pageStep >= scrollEl.scrollHeight - 1) {
         autoReading.value = false
         cleanupCoverOverlay()
         return
       }
-      // 推进一页
+      // 推进一页（按整行步长）
       isRestoring = true
-      scrollEl.scrollTop = scrollEl.scrollTop + H
+      scrollEl.scrollTop = scrollEl.scrollTop + pageStep
       // 确保后续内容已加载
       if (scrollEl.scrollTop + H >= scrollEl.scrollHeight - 200) {
         appendChapterBelow()
@@ -648,10 +661,11 @@ function startCoverAutoRead() {
       requestAnimationFrame(() => {
         isRestoring = false
         H = scrollEl.clientHeight
+        pageStep = computePageStep()
         syncOverlayBox()
         snapshotNextPage()
-        mask.style.height = '0%'
-        line.style.top = '0%'
+        mask.style.height = '0px'
+        line.style.top = '0px'
         pageStart = 0
         autoReadRaf = requestAnimationFrame(tick)
       })
@@ -670,7 +684,23 @@ function cleanupCoverOverlay() {
 function stopAutoRead() {
   if (autoReadRaf) { cancelAnimationFrame(autoReadRaf); autoReadRaf = null }
   if (coverOverlayEl) { coverOverlayEl.remove(); coverOverlayEl = null }
+  autoReadPaused = false
 }
+
+// 菜单/设置面板打开时临时暂停自动阅读，关闭后恢复
+watch([showBars, showSettings, showCatalog], ([bars, settingsOpen, catalogOpen]) => {
+  if (!autoReading.value) return
+  const shouldPause = bars || settingsOpen || catalogOpen
+  if (shouldPause && !autoReadPaused) {
+    // 暂停：停掉 RAF 和 overlay，但保持 autoReading 状态
+    autoReadPaused = true
+    if (autoReadRaf) { cancelAnimationFrame(autoReadRaf); autoReadRaf = null }
+    if (coverOverlayEl) { coverOverlayEl.remove(); coverOverlayEl = null }
+  } else if (!shouldPause && autoReadPaused) {
+    autoReadPaused = false
+    startAutoRead()
+  }
+})
 
 // ========== 交互 ==========
 function onReaderClick(e) {
