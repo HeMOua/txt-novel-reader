@@ -10,6 +10,17 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src')
     }
   },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        api: 'modern-compiler',
+        additionalData: `
+@use "@/styles/variables" as *;
+@use "@/styles/mixins" as *;
+`
+      }
+    }
+  },
   server: {
     port: 5173
   },

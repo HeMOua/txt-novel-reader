@@ -1,0 +1,17 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// 全局通用样式
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+// 全局 transition 类
+.fade-enter-active, .fade-leave-active {
+  transition: opacity $duration-normal $easing-default;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+}

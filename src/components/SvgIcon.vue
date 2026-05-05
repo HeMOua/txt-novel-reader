@@ -31,7 +31,7 @@ const iconStyle = computed(() => ({
 }))
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
 .svg-icon :deep(svg) {
   width: 100%;
   height: 100%;

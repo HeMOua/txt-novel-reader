@@ -1,0 +1,84 @@
+@use 'variables' as *;
+
+// 夜间模式样式
+@mixin night-mode {
+  .night-mode & {
+    @content;
+  }
+}
+
+// 面板通用样式
+@mixin panel-base {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: $color-panel-bg;
+  backdrop-filter: blur(16px);
+  color: $color-panel-text;
+}
+
+@mixin panel-wide {
+  &.panel-wide {
+    max-width: 600px;
+    margin: 0 auto;
+    border-radius: $radius-2xl $radius-2xl 0 0;
+  }
+}
+
+// 滑块样式
+@mixin slider-thumb($size: 16px, $color: $color-brand) {
+  -webkit-appearance: none;
+  appearance: none;
+  width: $size;
+  height: $size;
+  border-radius: $radius-full;
+  background: $color;
+  cursor: pointer;
+}
+
+@mixin slider-track {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #444;
+  border-radius: 2px;
+  outline: none;
+}
+
+// 文字截断
+@mixin text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@mixin text-clamp($lines: 2) {
+  display: -webkit-box;
+  -webkit-line-clamp: $lines;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+// 面板按钮
+@mixin panel-btn {
+  background: none;
+  border: none;
+  color: $color-panel-text-muted;
+  font-size: $font-size-sm;
+  cursor: pointer;
+  transition: color $duration-fast $easing-default,
+              background $duration-fast $easing-default;
+}
+
+// 选项卡激活态
+@mixin tab-active($color: $color-brand) {
+  color: $color;
+  border-bottom-color: $color;
+}
+
+// 卡片选中态
+@mixin card-active($color: $color-brand) {
+  border-color: $color;
+  background: rgba($color, 0.1);
+}

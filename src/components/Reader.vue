@@ -193,15 +193,15 @@
     <!-- ========== 一级面板 ========== -->
     <transition name="slide-up">
       <div v-if="showPanelSystem && !autoReading && !showLevel3" class="level1-panel" @click.stop>
-        <button class="l1-btn" :class="{ active: activeLevel2 === 'catalog' }" @click="setLevel2('catalog')">
+        <button class="l1-btn" :class="{ active: activeLevel2 === 'catalog' }" @click="handleSetLevel2('catalog')">
           <span class="l1-icon"><SvgIcon name="catalog" :size="22" /></span>
           <span>目录</span>
         </button>
-        <button class="l1-btn" :class="{ active: activeLevel2 === 'night' }" @click="setLevel2('night')">
+        <button class="l1-btn" :class="{ active: activeLevel2 === 'night' }" @click="handleSetLevel2('night')">
           <span class="l1-icon"><SvgIcon :name="settings.nightMode ? 'sun' : 'moon'" :size="22" /></span>
           <span>{{ settings.nightMode ? '日间' : '夜间' }}</span>
         </button>
-        <button class="l1-btn" :class="{ active: activeLevel2 === 'settings' }" @click="setLevel2('settings')">
+        <button class="l1-btn" :class="{ active: activeLevel2 === 'settings' }" @click="handleSetLevel2('settings')">
           <span class="l1-icon"><SvgIcon name="settings" :size="22" /></span>
           <span>设置</span>
         </button>
@@ -242,23 +242,31 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { getChapterText, calcProgress } from '../utils/chapterParser.js'
-import { getSettings, saveSettings, THEMES, LINE_HEIGHT_PRESETS, FONT_FAMILIES, updateProgress, flushProgress } from '../utils/bookStore.js'
+import { getSettings, saveSettings, THEMES, LINE_HEIGHT_PRESETS, FONT_FAMILIES } from '@/utils/bookStore.js'
 import SvgIcon from './SvgIcon.vue'
+
+// Composables
+import { useClock } from '@/composables/useClock'
+import { useWindowWidth } from '@/composables/useWindowWidth'
+import { usePanelSystem } from '@/composables/usePanelSystem'
+import { useKeyboard } from '@/composables/useKeyboard'
+import { useProgress } from '@/composables/useProgress'
+import { useChapterRenderer } from '@/composables/useChapterRenderer'
+import { useAutoRead } from '@/composables/useAutoRead'
 
 const props = defineProps({
   book: { type: Object, required: true }
 })
 const emit = defineEmits(['back'])
 
-// ========== 面板状态 ==========
-const showPanelSystem = ref(false)  // 一级+二级面板系统可见
-const activeLevel2 = ref(null)       // 'default' | 'catalog' | 'night' | 'settings' | null
-const showLevel3 = ref(false)        // 三级面板（翻页方式）
-const showAutoReadPanel = ref(false) // 自动阅读专属面板
-const prevLevel2 = ref(null)         // 三级面板打开前的二级面板记忆
-
-const showAnyPanel = computed(() => showPanelSystem.value || showAutoReadPanel.value || showLevel3.value)
+// ========== Composables ==========
+const { currentTime } = useClock()
+const { isWideWindow } = useWindowWidth()
+const {
+  showPanelSystem, activeLevel2, showLevel3, showAutoReadPanel, showAnyPanel,
+  setLevel2, openLevel3, closeLevel3, closeLevel3ToReading,
+  closeAllPanels, showDefaultPanel, showAutoRead, hideAutoRead, hideAllPanels,
+} = usePanelSystem()
 
 // ========== 自动阅读状态 ==========
 const autoReading = ref(false)
@@ -282,31 +290,13 @@ const pageModes = [
   { id: 'slide', name: '平移翻页', icon: '<rect x="3" y="5" width="12" height="14" rx="1"/><path d="M15 12h6M19 9l3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/>' },
 ]
 
-const currentPageModeName = computed(() => {
-  const m = pageModes.find(p => p.id === settings.value.autoReadMode)
-  return m ? m.name : '上下滑动'
-})
-
 // ========== 基础状态 ==========
-const isWideWindow = ref(false)
-const currentTime = ref('')
 const progress = ref(props.book.progress || 0)
 const sliderChapter = ref(props.book.currentChapterIndex || 0)
 const scrollArea = ref(null)
 const contentEl = ref(null)
 const catalogList = ref(null)
 const currentChapterIndex = ref(props.book.currentChapterIndex || 0)
-
-let autoReadTimer = null
-let autoReadRaf = null
-
-// ========== 滑动窗口渲染 ==========
-const MAX_RANGE = 4
-const BUFFER_AHEAD = 1
-
-const rangeStart = ref(0)
-const rangeEnd = ref(0)
-const chapterDomMap = new Map()
 
 // ========== 设置 ==========
 const settings = ref(getSettings())
@@ -331,6 +321,11 @@ const displayChapters = computed(() => {
   return list
 })
 
+const currentPageModeName = computed(() => {
+  const m = pageModes.find(p => p.id === settings.value.autoReadMode)
+  return m ? m.name : '上下滑动'
+})
+
 // ========== 样式 ==========
 const readerStyle = computed(() => ({
   background: settings.value.nightMode ? '#1a1a1a' : settings.value.bgColor,
@@ -351,148 +346,37 @@ const contentStyle = computed(() => {
   }
 })
 
-// ========== 核心渲染 ==========
+// ========== 章节渲染器 ==========
+const renderer = useChapterRenderer({
+  contentEl,
+  scrollArea,
+  chapters,
+  fullText,
+  currentChapterIndex,
+  onChapterChange: (idx) => { currentChapterIndex.value = idx },
+})
 
-function renderChapterDom(chapterIdx) {
-  const meta = chapters.value[chapterIdx]
-  if (!meta) return null
+// ========== 进度追踪 ==========
+const { saveReadingProgress, flushReadingProgress } = useProgress({
+  filePath: computed(() => props.book.filePath),
+  currentChapterIndex,
+  progress,
+})
 
-  const container = document.createElement('div')
-  container.className = 'chapter-block'
-  container.dataset.chapterIndex = chapterIdx
-
-  const header = document.createElement('div')
-  header.className = 'chapter-header'
-  const title = document.createElement('h2')
-  title.className = 'chapter-title-inline'
-  title.textContent = meta.title
-  header.appendChild(title)
-  container.appendChild(header)
-
-  const body = document.createElement('div')
-  body.className = 'chapter-body'
-  container.appendChild(body)
-
-  const text = getChapterText(fullText.value, meta)
-  const lines = text.split('\n').filter(l => l.trim())
-
-  if (lines.length === 0) {
-    body.innerHTML = '<p style="color:#999;text-align:center">（本章无内容）</p>'
-    return container
-  }
-
-  const fragment = document.createDocumentFragment()
-  for (const line of lines) {
-    const p = document.createElement('p')
-    p.textContent = line.trim()
-    fragment.appendChild(p)
-  }
-  body.appendChild(fragment)
-
-  return container
-}
-
-function rebuildWindow(centerIdx, scrollRatio = 0) {
-  if (!contentEl.value) return
-
-  contentEl.value.innerHTML = ''
-  chapterDomMap.clear()
-
-  const start = Math.max(0, centerIdx - BUFFER_AHEAD)
-  const end = Math.min(totalChapters.value - 1, centerIdx + BUFFER_AHEAD)
-  rangeStart.value = start
-  rangeEnd.value = end
-
-  for (let i = start; i <= end; i++) {
-    const dom = renderChapterDom(i)
-    if (dom) {
-      contentEl.value.appendChild(dom)
-      chapterDomMap.set(i, dom)
-    }
-  }
-
-  isRestoring = true
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      if (!scrollArea.value) return
-      const targetDom = chapterDomMap.get(centerIdx)
-      if (targetDom && scrollRatio > 0) {
-        const chapterH = targetDom.offsetHeight
-        const containerH = scrollArea.value.clientHeight
-        scrollArea.value.scrollTop = targetDom.offsetTop + Math.round(scrollRatio * Math.max(0, chapterH - containerH))
-      } else if (targetDom) {
-        scrollArea.value.scrollTop = targetDom.offsetTop
-      }
-      setTimeout(() => { isRestoring = false }, 100)
-    })
-  })
-}
-
-function appendChapterBelow() {
-  const nextIdx = rangeEnd.value + 1
-  if (nextIdx >= totalChapters.value) return
-  if (!contentEl.value) return
-
-  const dom = renderChapterDom(nextIdx)
-  if (dom) {
-    contentEl.value.appendChild(dom)
-    chapterDomMap.set(nextIdx, dom)
-    rangeEnd.value = nextIdx
-  }
-
-  trimFromTop()
-}
-
-function prependChapterAbove() {
-  const prevIdx = rangeStart.value - 1
-  if (prevIdx < 0) return
-  if (!contentEl.value || !scrollArea.value) return
-
-  const oldScrollTop = scrollArea.value.scrollTop
-  const oldScrollHeight = scrollArea.value.scrollHeight
-
-  const dom = renderChapterDom(prevIdx)
-  if (!dom) return
-
-  contentEl.value.insertBefore(dom, contentEl.value.firstChild)
-  chapterDomMap.set(prevIdx, dom)
-  rangeStart.value = prevIdx
-
-  isRestoring = true
-  requestAnimationFrame(() => {
-    if (!scrollArea.value) { isRestoring = false; return }
-    const newScrollHeight = scrollArea.value.scrollHeight
-    scrollArea.value.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight)
-    isRestoring = false
-
-    trimFromBottom()
-  })
-}
-
-function trimFromTop() {
-  while (rangeEnd.value - rangeStart.value + 1 > MAX_RANGE && rangeStart.value < currentChapterIndex.value - 1) {
-    const dom = chapterDomMap.get(rangeStart.value)
-    if (dom) dom.remove()
-    chapterDomMap.delete(rangeStart.value)
-    rangeStart.value++
-  }
-}
-
-function trimFromBottom() {
-  while (rangeEnd.value - rangeStart.value + 1 > MAX_RANGE && rangeEnd.value > currentChapterIndex.value + 1) {
-    const dom = chapterDomMap.get(rangeEnd.value)
-    if (dom) dom.remove()
-    chapterDomMap.delete(rangeEnd.value)
-    rangeEnd.value--
-  }
-}
+// ========== 自动阅读 ==========
+const autoRead = useAutoRead({
+  scrollArea,
+  contentEl,
+  settings,
+  autoReading,
+  appendChapterBelow: renderer.appendChapterBelow,
+})
 
 // ========== 滚动追踪 ==========
-let isRestoring = false
 let scrollThrottle = null
 
 function onScroll() {
-  if (isRestoring) return
+  if (renderer.getIsRestoring()) return
   if (!scrollArea.value) return
   if (scrollThrottle) return
   scrollThrottle = requestAnimationFrame(() => {
@@ -503,7 +387,7 @@ function onScroll() {
 
     const viewportCenter = scrollTop + clientHeight / 2
     let detectedChapter = currentChapterIndex.value
-    for (const [idx, dom] of chapterDomMap) {
+    for (const [idx, dom] of renderer.chapterDomMap) {
       if (dom.offsetTop <= viewportCenter && dom.offsetTop + dom.offsetHeight >= viewportCenter) {
         detectedChapter = idx
         break
@@ -518,7 +402,7 @@ function onScroll() {
     const totalChars = fullText.value.length
     if (totalChars > 0 && chapters.value[detectedChapter]) {
       const chMeta = chapters.value[detectedChapter]
-      const chDom = chapterDomMap.get(detectedChapter)
+      const chDom = renderer.chapterDomMap.get(detectedChapter)
       let chapterRatio = 0
       if (chDom && chDom.offsetHeight > clientHeight) {
         chapterRatio = Math.max(0, Math.min(1,
@@ -532,18 +416,18 @@ function onScroll() {
     saveReadingProgress()
 
     if (scrollTop + clientHeight >= scrollHeight - 200) {
-      appendChapterBelow()
+      renderer.appendChapterBelow()
     }
 
-    if (scrollTop <= 200 && rangeStart.value > 0) {
-      prependChapterAbove()
+    if (scrollTop <= 200 && renderer.rangeStart.value > 0) {
+      renderer.prependChapterAbove()
     }
   })
 }
 
-// ========== 进度保存/恢复 ==========
-function saveReadingProgress() {
-  const chDom = chapterDomMap.get(currentChapterIndex.value)
+// ========== 进度保存 ==========
+function saveReadingProgressWithRatio() {
+  const chDom = renderer.chapterDomMap.get(currentChapterIndex.value)
   let scrollRatio = 0
   if (chDom && scrollArea.value) {
     const chH = chDom.offsetHeight
@@ -554,7 +438,7 @@ function saveReadingProgress() {
       ))
     }
   }
-  updateProgress(props.book.filePath, currentChapterIndex.value, scrollRatio, progress.value)
+  saveReadingProgress(scrollRatio)
 }
 
 function restorePosition() {
@@ -564,7 +448,7 @@ function restorePosition() {
   currentChapterIndex.value = savedChapterIndex
   sliderChapter.value = savedChapterIndex
 
-  rebuildWindow(savedChapterIndex, savedScrollRatio)
+  renderer.rebuildWindow(savedChapterIndex, savedScrollRatio)
 }
 
 // ========== 章节跳转 ==========
@@ -572,12 +456,11 @@ function jumpToChapter(index) {
   if (index < 0 || index >= totalChapters.value) return
   currentChapterIndex.value = index
   sliderChapter.value = index
-  rebuildWindow(index, 0)
+  renderer.rebuildWindow(index, 0)
 }
 function jumpFromCatalog(index) {
   jumpToChapter(index)
-  showPanelSystem.value = false
-  activeLevel2.value = null
+  hideAllPanels()
 }
 function prevChapter() { jumpToChapter(currentChapterIndex.value - 1) }
 function nextChapter() { jumpToChapter(currentChapterIndex.value + 1) }
@@ -608,205 +491,25 @@ function setAutoReadMode(mode) {
   if (settings.value.autoReadMode === mode) return
   settings.value.autoReadMode = mode
   onSettingsChange()
-  if (autoReading.value) { stopAutoRead(); startAutoRead() }
+  if (autoReading.value) { autoRead.stopAutoRead(); autoRead.startAutoRead() }
 }
 
-// ========== 自动阅读引擎 ==========
-let coverOverlayEl = null
-let autoReadPaused = false
-
-function startAutoRead() {
-  stopAutoRead()
-  if (!scrollArea.value) return
-  if (settings.value.autoReadMode === 'cover') {
-    startCoverAutoRead()
-  } else {
-    startScrollAutoRead()
-  }
-}
-
-function startScrollAutoRead() {
-  function getPxPerSec() {
-    const speed = Math.max(0, Math.min(100, settings.value.autoReadSpeed ?? 30))
-    return 5 + speed * 2
-  }
-  let virtualTop = scrollArea.value.scrollTop
-  let lastT = 0
-  function tick(t) {
-    if (!scrollArea.value) { autoReadRaf = null; return }
-    if (!lastT) { lastT = t; autoReadRaf = requestAnimationFrame(tick); return }
-    let dt = t - lastT
-    lastT = t
-    if (dt > 100) dt = 100
-    virtualTop += getPxPerSec() * (dt / 1000)
-    const actual = scrollArea.value.scrollTop
-    if (Math.abs(actual - virtualTop) > 4) virtualTop = actual
-    scrollArea.value.scrollTop = virtualTop
-    autoReadRaf = requestAnimationFrame(tick)
-  }
-  autoReadRaf = requestAnimationFrame(tick)
-}
-
-function startCoverAutoRead() {
-  const scrollEl = scrollArea.value
-  const container = scrollEl.parentElement
-  if (!scrollEl || !container) return
-
-  const overlay = document.createElement('div')
-  overlay.className = 'cover-overlay'
-  Object.assign(overlay.style, {
-    position: 'absolute',
-    overflow: 'hidden',
-    pointerEvents: 'none',
-    zIndex: '15',
-    background: 'transparent',
-  })
-  const mask = document.createElement('div')
-  mask.className = 'cover-mask'
-  const maskBg = settings.value.nightMode ? '#1a1a1a' : (settings.value.bgColor || '#f5f0e8')
-  Object.assign(mask.style, {
-    position: 'absolute',
-    top: '0', left: '0', right: '0',
-    height: '0',
-    overflow: 'hidden',
-    background: maskBg,
-    willChange: 'height',
-  })
-  const cloneWrap = document.createElement('div')
-  cloneWrap.className = 'cover-clone-wrap'
-  mask.appendChild(cloneWrap)
-  overlay.appendChild(mask)
-  const line = document.createElement('div')
-  line.className = 'cover-line'
-  const lineBorder = settings.value.nightMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)'
-  const shadow1 = settings.value.nightMode ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.25)'
-  const shadow2 = settings.value.nightMode ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.15)'
-  Object.assign(line.style, {
-    position: 'absolute',
-    left: '0', right: '0',
-    top: '0',
-    height: '2px',
-    background: lineBorder,
-    boxShadow: `0 8px 16px ${shadow1}, 0 2px 6px ${shadow2}`,
-    transform: 'translateY(-1px)',
-    willChange: 'top',
-    pointerEvents: 'none',
-    zIndex: '2',
-  })
-  overlay.appendChild(line)
-  container.appendChild(overlay)
-  coverOverlayEl = overlay
-
-  function syncOverlayBox() {
-    const sr = scrollEl.getBoundingClientRect()
-    const cr = container.getBoundingClientRect()
-    overlay.style.top = (sr.top - cr.top) + 'px'
-    overlay.style.left = (sr.left - cr.left) + 'px'
-    overlay.style.width = sr.width + 'px'
-    overlay.style.height = sr.height + 'px'
-    cloneWrap.style.height = sr.height + 'px'
-  }
-  syncOverlayBox()
-
-  let H = scrollEl.clientHeight
-  let pageStep = computePageStep()
-  let pageStart = 0
-
-  function computePageStep() {
-    const lineH = (settings.value.fontSize || 18) * (settings.value.lineHeight || 1.8)
-    if (!lineH || lineH <= 0) return scrollEl.clientHeight
-    const n = Math.max(1, Math.floor(scrollEl.clientHeight / lineH))
-    return n * lineH
-  }
-
-  function snapshotNextPage() {
-    cloneWrap.innerHTML = ''
-    if (!contentEl.value) return
-    const clone = contentEl.value.cloneNode(true)
-    clone.style.position = 'absolute'
-    clone.style.left = '0'
-    clone.style.right = '0'
-    clone.style.top = `-${scrollEl.scrollTop + pageStep}px`
-    clone.style.margin = '0 auto'
-    cloneWrap.appendChild(clone)
-  }
-  snapshotNextPage()
-
-  function tick(t) {
-    if (!autoReading.value || !scrollArea.value) {
-      cleanupCoverOverlay()
-      return
-    }
-    if (!pageStart) pageStart = t
-    const speed = Math.max(0, Math.min(100, settings.value.autoReadSpeed ?? 30))
-    const pageDuration = Math.max(800, 11000 - speed * 100)
-    const p = Math.min(1, (t - pageStart) / pageDuration)
-    const px = (p * H).toFixed(2) + 'px'
-    mask.style.height = px
-    line.style.top = px
-    if (p >= 1) {
-      if (scrollEl.scrollTop + pageStep >= scrollEl.scrollHeight - 1) {
-        autoReading.value = false
-        cleanupCoverOverlay()
-        return
-      }
-      isRestoring = true
-      scrollEl.scrollTop = scrollEl.scrollTop + pageStep
-      if (scrollEl.scrollTop + H >= scrollEl.scrollHeight - 200) {
-        appendChapterBelow()
-      }
-      requestAnimationFrame(() => {
-        isRestoring = false
-        H = scrollEl.clientHeight
-        pageStep = computePageStep()
-        syncOverlayBox()
-        snapshotNextPage()
-        mask.style.height = '0px'
-        line.style.top = '0px'
-        pageStart = 0
-        autoReadRaf = requestAnimationFrame(tick)
-      })
-      return
-    }
-    autoReadRaf = requestAnimationFrame(tick)
-  }
-  autoReadRaf = requestAnimationFrame(tick)
-}
-
-function cleanupCoverOverlay() {
-  if (autoReadRaf) { cancelAnimationFrame(autoReadRaf); autoReadRaf = null }
-  if (coverOverlayEl) { coverOverlayEl.remove(); coverOverlayEl = null }
-}
-
-function stopAutoRead() {
-  if (autoReadRaf) { cancelAnimationFrame(autoReadRaf); autoReadRaf = null }
-  if (coverOverlayEl) { coverOverlayEl.remove(); coverOverlayEl = null }
-  autoReadPaused = false
-}
-
-// ========== 面板交互逻辑 ==========
-
-/** 从设置面板开启自动阅读 */
+// ========== 面板交互 ==========
 function startAutoReadFromSettings() {
   autoReading.value = true
-  showPanelSystem.value = false
-  activeLevel2.value = null
-  startAutoRead()
+  hideAllPanels()
+  autoRead.startAutoRead()
 }
 
-/** 从自动阅读面板退出 */
 function stopAndExitAutoRead() {
   autoReading.value = false
   showAutoReadPanel.value = false
-  stopAutoRead()
+  autoRead.stopAutoRead()
 }
 
-/** 切换二级面板 */
-function setLevel2(panel) {
-  if (activeLevel2.value === panel) return
-  activeLevel2.value = panel
-  if (!showPanelSystem.value) showPanelSystem.value = true
-
+/** 切换二级面板（带目录自动滚动） */
+function handleSetLevel2(panel) {
+  setLevel2(panel)
   if (panel === 'catalog') {
     nextTick(() => {
       if (!catalogList.value) return
@@ -821,83 +524,44 @@ function setLevel2(panel) {
   }
 }
 
-/** 打开三级面板 */
-function openLevel3() {
-  prevLevel2.value = activeLevel2.value
-  showLevel3.value = true
-}
-
-/** 关闭三级面板 - 回到二级面板 */
-function closeLevel3() {
-  showLevel3.value = false
-}
-
-/** 关闭三级面板 - 直接回到阅读 */
-function closeLevel3ToReading() {
-  showLevel3.value = false
-  showPanelSystem.value = false
-  activeLevel2.value = null
-}
-
 /** 选择翻页方式 */
 function selectPageMode(modeId) {
   setAutoReadMode(modeId)
-  showLevel3.value = false
-  showPanelSystem.value = false
-  activeLevel2.value = null
-}
-
-/** 关闭所有面板 */
-function closeAllPanels() {
-  showLevel3.value = false
-  showPanelSystem.value = false
-  activeLevel2.value = null
-  showAutoReadPanel.value = false
+  closeLevel3ToReading()
 }
 
 // 面板打开时暂停自动阅读
 watch([showPanelSystem, activeLevel2, showLevel3, showAutoReadPanel], () => {
   if (!autoReading.value) return
   const shouldPause = showPanelSystem.value || showLevel3.value || showAutoReadPanel.value
-  if (shouldPause && !autoReadPaused) {
-    autoReadPaused = true
-    if (autoReadRaf) { cancelAnimationFrame(autoReadRaf); autoReadRaf = null }
-    if (coverOverlayEl) { coverOverlayEl.remove(); coverOverlayEl = null }
-  } else if (!shouldPause && autoReadPaused) {
-    autoReadPaused = false
-    startAutoRead()
+  if (shouldPause && !autoRead.autoReadPaused()) {
+    autoRead.pauseAutoRead()
+  } else if (!shouldPause && autoRead.autoReadPaused()) {
+    autoRead.resumeAutoRead()
   }
 })
 
 // ========== 交互点击 ==========
 function onReaderClick(e) {
-  // 优先级 1：自动阅读面板打开 → 关闭它
   if (showAutoReadPanel.value) {
     showAutoReadPanel.value = false
     return
   }
 
-  // 优先级 2：三级面板打开 → 由 overlay 处理，不会到这里
   if (showLevel3.value) return
 
-  // 优先级 3：普通面板打开 → 关闭所有面板
   if (showPanelSystem.value) {
-    showPanelSystem.value = false
-    activeLevel2.value = null
+    hideAllPanels()
     return
   }
 
-  // 优先级 4：无面板 → 按区域处理
   const rect = e.currentTarget.getBoundingClientRect()
   const zone = (e.clientY - rect.top) / rect.height
   if (zone > 0.25 && zone < 0.75) {
     if (autoReading.value) {
-      // 自动阅读状态 → 显示专属面板
-      showAutoReadPanel.value = true
+      showAutoRead()
     } else {
-      // 普通状态 → 显示一级面板 + 默认二级面板
-      showPanelSystem.value = true
-      activeLevel2.value = 'default'
+      showDefaultPanel()
     }
   } else if (zone <= 0.25) {
     scrollArea.value?.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'smooth' })
@@ -907,16 +571,6 @@ function onReaderClick(e) {
 }
 
 // ========== 键盘快捷键 ==========
-function onKeyDown(e) {
-  switch (e.key) {
-    case 'ArrowLeft': case 'ArrowUp':
-      scrollArea.value?.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'smooth' }); e.preventDefault(); break
-    case 'ArrowRight': case 'ArrowDown': case ' ':
-      scrollArea.value?.scrollBy({ top: scrollArea.value.clientHeight * 0.8, behavior: 'smooth' }); e.preventDefault(); break
-    case 'Escape': handleEscape(); e.preventDefault(); break
-  }
-}
-
 function handleEscape() {
   if (showAutoReadPanel.value) {
     showAutoReadPanel.value = false
@@ -925,405 +579,495 @@ function handleEscape() {
   } else if (showPanelSystem.value && activeLevel2.value && activeLevel2.value !== 'default') {
     activeLevel2.value = 'default'
   } else if (showPanelSystem.value) {
-    showPanelSystem.value = false
-    activeLevel2.value = null
+    hideAllPanels()
   } else {
     emit('back')
   }
 }
 
-function updateClock() {
-  const now = new Date()
-  currentTime.value = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
-}
+useKeyboard({
+  onPrev: () => scrollArea.value?.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'smooth' }),
+  onNext: () => scrollArea.value?.scrollBy({ top: scrollArea.value.clientHeight * 0.8, behavior: 'smooth' }),
+  onEscape: handleEscape,
+})
 
 // ========== 初始化 ==========
-let clockTimer = null
-
-function checkWindowWidth() {
-  isWideWindow.value = window.innerWidth >= 600
-}
-
 onMounted(() => {
-  updateClock()
-  clockTimer = setInterval(updateClock, 10000)
-  document.addEventListener('keydown', onKeyDown)
-  checkWindowWidth()
-  window.addEventListener('resize', checkWindowWidth)
-
   nextTick(() => {
-    isRestoring = true
+    renderer.setIsRestoring(true)
     restorePosition()
-    setTimeout(() => { isRestoring = false }, 300)
+    setTimeout(() => { renderer.setIsRestoring(false) }, 300)
   })
 })
 
 onUnmounted(() => {
-  clearInterval(clockTimer)
-  stopAutoRead()
-  flushProgress()
-  document.removeEventListener('keydown', onKeyDown)
-  window.removeEventListener('resize', checkWindowWidth)
+  autoRead.stopAutoRead()
+  flushReadingProgress()
 })
 </script>
 
-<style scoped>
-/* ========== 阅读区域 ========== */
+<style lang="scss" scoped>
+/* ========== 根容器 ========== */
 .reader-container {
   position: relative; height: 100vh;
   display: flex; flex-direction: column; overflow: hidden;
-  transition: background 0.3s, color 0.3s;
+  transition: background $duration-slow $easing-default, color $duration-slow $easing-default;
 }
-.reader-scroll { flex: 1; overflow-y: auto; scroll-behavior: auto; scrollbar-width: none; -ms-overflow-style: none; }
-.reader-scroll::-webkit-scrollbar { display: none; }
-.reader-content { margin: 0 auto; word-wrap: break-word; text-align: justify; user-select: text; }
+
+.reader-scroll {
+  flex: 1; overflow-y: auto; scroll-behavior: auto;
+  scrollbar-width: none; -ms-overflow-style: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+.reader-content {
+  margin: 0 auto; word-wrap: break-word; text-align: justify; user-select: text;
+}
 
 /* 章节块 */
 .chapter-block { margin-bottom: 0; }
-.chapter-header { padding: 28px 0 16px; border-bottom: 1px solid v-bind('settings.nightMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"'); margin-bottom: 16px; }
-.chapter-title-inline { font-size: 1.2em; font-weight: 700; text-align: center; color: inherit; opacity: 0.85; }
-.chapter-body :deep(p) { text-indent: 2em; margin-bottom: v-bind('settings.paragraphSpacing + "px"'); line-height: inherit; }
+
+.chapter-header {
+  padding: $spacing-2xl 0 $spacing-base;
+  border-bottom: 1px solid v-bind('settings.nightMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"');
+  margin-bottom: $spacing-base;
+}
+
+.chapter-title-inline {
+  font-size: 1.2em; font-weight: 700; text-align: center; color: inherit; opacity: 0.85;
+}
+
+.chapter-body :deep(p) {
+  text-indent: 2em;
+  margin-bottom: v-bind('settings.paragraphSpacing + "px"');
+  line-height: inherit;
+}
 
 /* 常驻信息 */
 .chapter-label-fixed {
-  position: absolute; top: 8px; left: 16px; font-size: 12px; z-index: 5;
+  position: absolute; top: $spacing-sm; left: $spacing-base;
+  font-size: $font-size-sm; z-index: $z-index-info;
   color: v-bind('settings.nightMode ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.2)"');
-  pointer-events: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  pointer-events: none; max-width: 60%;
+  @include text-ellipsis;
 }
+
 .reader-info-bar {
   position: absolute; bottom: 0; left: 0; right: 0;
-  display: flex; justify-content: space-between; padding: 4px 20px;
-  font-size: 11px; color: v-bind('settings.nightMode ? "#555" : "#bbb"');
-  pointer-events: none; z-index: 5;
+  display: flex; justify-content: space-between;
+  padding: $spacing-xs $spacing-lg;
+  font-size: $font-size-xs;
+  color: v-bind('settings.nightMode ? "#555" : "#bbb"');
+  pointer-events: none; z-index: $z-index-info;
 }
 
 /* ========== 顶部栏 ========== */
 .panel-top-bar {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 40;
-  display: flex; align-items: center; padding: 10px 16px;
-  background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); color: #eee;
+  position: absolute; top: 0; left: 0; right: 0; z-index: $z-index-top-bar;
+  display: flex; align-items: center; padding: 10px $spacing-base;
+  background: $color-panel-bg-light; backdrop-filter: blur(10px); color: $color-panel-text;
 }
-.back-btn { background: none; border: none; color: #eee; font-size: 14px; cursor: pointer; padding: 4px 10px; border-radius: 4px; white-space: nowrap; }
-.back-btn:hover { background: rgba(255,255,255,0.1); }
-.top-bar-title { flex: 1; text-align: center; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ccc; }
+
+.back-btn {
+  background: none; border: none; color: $color-panel-text;
+  font-size: $font-size-md; cursor: pointer;
+  padding: $spacing-xs 10px; border-radius: $radius-sm; white-space: nowrap;
+
+  &:hover { background: rgba(255, 255, 255, 0.1); }
+}
+
+.top-bar-title {
+  flex: 1; text-align: center; font-size: $font-size-md;
+  @include text-ellipsis; color: #ccc;
+}
+
 .top-spacer { width: 60px; }
 
 /* ========== 一级面板 ========== */
 .level1-panel {
-  position: absolute; bottom: 0; left: 0; right: 0; z-index: 30;
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: $z-index-panel-1;
   height: 56px;
-  background: rgba(0,0,0,0.92); backdrop-filter: blur(12px);
+  background: $color-panel-bg-light; backdrop-filter: blur(12px);
   display: flex; align-items: center; justify-content: space-around;
   color: #ccc;
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
+
 .l1-btn {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
-  background: none; border: none; color: #999; font-size: 11px;
-  cursor: pointer; padding: 6px 20px; border-radius: 8px;
-  transition: color 0.15s, background 0.15s;
+  @include panel-btn;
+  padding: $spacing-sm $spacing-lg; border-radius: $radius-md;
+
+  &:hover { color: #ddd; background: rgba(255, 255, 255, 0.05); }
+  &.active { color: $color-brand; }
 }
-.l1-btn:hover { color: #ddd; background: rgba(255,255,255,0.05); }
-.l1-btn.active { color: #e67e22; }
+
 .l1-icon { display: flex; align-items: center; justify-content: center; }
 
-/* ========== 二级面板 - 基础 ========== */
+/* ========== 二级面板 — 基础 ========== */
 .level2-panel {
-  position: absolute; left: 0; right: 0; z-index: 25;
-  background: rgba(0,0,0,0.95); backdrop-filter: blur(16px);
-  color: #eee;
-}
-.level2-panel.panel-wide {
-  max-width: 520px;
-  margin: 0 auto;
-  border-radius: 14px 14px 0 0;
+  position: absolute; left: 0; right: 0; z-index: $z-index-panel-2;
+  @include panel-base;
+  bottom: 56px;
+  padding: $spacing-base;
+
+  &.panel-wide {
+    margin: 0 auto;
+    border-radius: $radius-2xl $radius-2xl 0 0;
+  }
 }
 
 /* 默认二级：章节导航 */
 .level2-panel.l2-default {
-  bottom: 56px;
-  padding: 10px 16px 14px;
+  padding: 10px $spacing-base 14px;
 }
+
 .nav-row { display: flex; align-items: center; gap: 10px; }
+
 .nav-btn {
-  background: none; border: none; color: #ccc; font-size: 13px;
-  cursor: pointer; padding: 6px 12px; border-radius: 6px; white-space: nowrap;
-  transition: all 0.15s;
+  background: none; border: none; color: #ccc; font-size: $font-size-base;
+  cursor: pointer; padding: $spacing-sm $spacing-md; border-radius: $radius-sm; white-space: nowrap;
+  transition: all $duration-fast $easing-default;
+
+  &:hover { background: rgba(255, 255, 255, 0.08); color: $color-white; }
+  &:disabled { opacity: 0.3; cursor: not-allowed; }
 }
-.nav-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
-.nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-.progress-slider { flex: 1; padding: 0 4px; }
-.slider { width: 100%; height: 4px; -webkit-appearance: none; appearance: none; background: #444; border-radius: 2px; outline: none; }
-.slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #e67e22; cursor: pointer; }
+
+.progress-slider { flex: 1; padding: 0 $spacing-xs; }
+
+.slider {
+  @include slider-track;
+
+  &::-webkit-slider-thumb {
+    @include slider-thumb;
+  }
+}
 
 /* 目录二级 */
 .level2-panel.l2-catalog {
-  bottom: auto; top: 44px; /* 顶部栏高度 */
-  height: calc(50vh - 44px);
+  top: auto;
+  height: calc(70vh - 56px);
   display: flex; flex-direction: column;
-  border-radius: 0 0 14px 14px;
+  border-radius: $radius-2xl $radius-2xl 0 0;
   overflow: hidden;
+
+  &.panel-wide {
+    border-radius: $radius-2xl $radius-2xl 0 0;
+  }
 }
-.level2-panel.l2-catalog.panel-wide {
-  max-width: 600px;
-  border-radius: 0 0 14px 14px;
-}
+
 .catalog-content {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
 }
+
 .catalog-tabs {
-  display: flex; border-bottom: 1px solid rgba(255,255,255,0.08);
-  padding: 0 8px; flex-shrink: 0;
+  display: flex;
+  border-bottom: 1px solid $color-panel-border;
+  padding: 0 $spacing-sm; flex-shrink: 0;
 }
+
 .cat-tab {
   flex: 1; padding: 10px 0; background: none; border: none;
-  color: #888; font-size: 14px; cursor: pointer;
-  border-bottom: 2px solid transparent; transition: all 0.2s;
+  color: #888; font-size: $font-size-md; cursor: pointer;
+  border-bottom: 2px solid transparent; transition: all $duration-normal $easing-default;
+
+  &:hover { color: #bbb; }
+  &.active { @include tab-active; }
 }
-.cat-tab:hover { color: #bbb; }
-.cat-tab.active { color: #e67e22; border-bottom-color: #e67e22; }
+
 .catalog-info-bar {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 16px; font-size: 12px; color: #888;
-  border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0;
+  display: flex; align-items: center; gap: $spacing-sm;
+  padding: $spacing-sm $spacing-base; font-size: $font-size-sm; color: #888;
+  border-bottom: 1px solid $color-panel-border; flex-shrink: 0;
 }
-.cat-book-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.cat-book-name { flex: 1; @include text-ellipsis; }
 .cat-chapter-count { color: #666; }
+
 .cat-sort-btn {
   background: none; border: none; color: #888; cursor: pointer;
-  padding: 4px; display: flex; align-items: center; transition: color 0.15s;
+  padding: $spacing-xs; display: flex; align-items: center;
+  transition: color $duration-fast $easing-default;
+
+  &:hover { color: $color-panel-text; }
 }
-.cat-sort-btn:hover { color: #eee; }
+
 .catalog-list {
-  flex: 1; overflow-y: auto; padding: 4px 0;
+  flex: 1; overflow-y: auto; padding: $spacing-xs 0;
   scrollbar-width: thin; scrollbar-color: #333 transparent;
+
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
 }
-.catalog-list::-webkit-scrollbar { width: 4px; }
-.catalog-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
 .catalog-item {
-  display: flex; align-items: center; padding: 10px 16px;
-  cursor: pointer; font-size: 14px; color: #bbb; transition: background 0.15s;
+  display: flex; align-items: center; padding: 10px $spacing-base;
+  cursor: pointer; font-size: $font-size-md; color: #bbb;
+  transition: background $duration-fast $easing-default;
+
+  &:hover { background: $color-panel-surface-hover; }
+  &.active { @include card-active; }
 }
-.catalog-item:hover { background: rgba(255,255,255,0.05); }
-.catalog-item.active { color: #e67e22; background: rgba(230,126,34,0.1); }
-.chapter-index { width: 36px; font-size: 12px; color: #666; flex-shrink: 0; }
-.catalog-item.active .chapter-index { color: #e67e22; }
-.chapter-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.chapter-index {
+  width: 36px; font-size: $font-size-sm; color: #666; flex-shrink: 0;
+}
+
+.catalog-item.active .chapter-index { color: $color-brand; }
+
+.chapter-title { flex: 1; min-width: 0; @include text-ellipsis; }
 
 /* 夜间二级 */
-.level2-panel.l2-night {
-  bottom: 56px;
-  padding: 16px;
-}
 .night-toggle-row {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 0 16px;
+  padding: $spacing-sm 0 $spacing-base;
 }
+
 .night-label { font-size: 15px; color: #ddd; }
+
 .toggle-switch {
   position: relative; width: 44px; height: 24px;
   background: #444; border-radius: 12px;
-  cursor: pointer; transition: background 0.3s;
+  cursor: pointer; transition: background $duration-slow $easing-default;
   flex-shrink: 0;
+
+  &.on { background: $color-brand; }
 }
-.toggle-switch.on { background: #e67e22; }
+
 .toggle-thumb {
   position: absolute; top: 2px; left: 2px;
-  width: 20px; height: 20px; background: #fff;
-  border-radius: 50%; transition: transform 0.3s;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  width: 20px; height: 20px; background: $color-white;
+  border-radius: $radius-full; transition: transform $duration-slow $easing-default;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
+
 .toggle-switch.on .toggle-thumb { transform: translateX(20px); }
+
 .night-colors {
-  display: flex; gap: 16px; flex-wrap: wrap; justify-content: center;
-  padding: 8px 0;
+  display: flex; gap: $spacing-base; flex-wrap: wrap; justify-content: center;
+  padding: $spacing-sm 0;
 }
+
 .color-card {
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
-  cursor: pointer; transition: transform 0.15s;
+  display: flex; flex-direction: column; align-items: center; gap: $spacing-xs;
+  cursor: pointer; transition: transform $duration-fast $easing-default;
+
+  &:hover { transform: scale(1.05); }
 }
-.color-card:hover { transform: scale(1.05); }
+
 .color-swatch {
-  width: 44px; height: 44px; border-radius: 10px;
-  border: 2px solid rgba(255,255,255,0.1);
+  width: 44px; height: 44px; border-radius: $radius-lg;
+  border: 2px solid rgba(255, 255, 255, 0.1);
   display: flex; align-items: center; justify-content: center;
-  transition: border-color 0.2s;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  transition: border-color $duration-normal $easing-default;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
-.color-card.active .color-swatch { border-color: #e67e22; }
-.color-name { font-size: 11px; color: #888; }
-.color-card.active .color-name { color: #e67e22; }
+
+.color-card.active .color-swatch { border-color: $color-brand; }
+.color-name { font-size: $font-size-xs; color: #888; }
+.color-card.active .color-name { color: $color-brand; }
 
 /* 设置二级 */
 .level2-panel.l2-settings {
-  bottom: 56px;
-  padding: 12px 16px 16px;
+  max-width: 400px;
   max-height: calc(70vh - 56px);
   overflow-y: auto;
   scrollbar-width: none;
+
+  &::-webkit-scrollbar { display: none; }
 }
-.level2-panel.l2-settings::-webkit-scrollbar { display: none; }
+
 .setting-section {
   padding: 10px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid $color-panel-border;
+
+  &:last-child { border-bottom: none; }
 }
-.setting-section:last-child { border-bottom: none; }
-.section-label { display: block; font-size: 12px; color: #888; margin-bottom: 8px; }
-.setting-row { display: flex; align-items: center; gap: 10px; }
+
+.section-label { display: block; font-size: $font-size-sm; color: #888; margin-bottom: $spacing-sm; }
+.setting-row { display: flex; align-items: center; gap: 10px; justify-content: space-around; }
+
 .font-ctrl-btn {
-  width: 38px; height: 38px; border: 1px solid #555; border-radius: 8px;
-  background: transparent; color: #eee; font-size: 15px; cursor: pointer;
+  width: 38px; height: 38px; border: 1px solid #555; border-radius: $radius-md;
+  background: transparent; color: $color-panel-text; font-size: 15px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all 0.15s;
+  transition: all $duration-fast $easing-default;
+
+  &:hover { background: rgba(255, 255, 255, 0.08); }
+  &:active { background: rgba(255, 255, 255, 0.15); }
 }
-.font-ctrl-btn:hover { background: rgba(255,255,255,0.08); }
-.font-ctrl-btn:active { background: rgba(255,255,255,0.15); }
+
 .font-size-val {
-  min-width: 28px; text-align: center; font-size: 16px; font-weight: 600; color: #eee;
+  min-width: 28px; text-align: center; font-size: $font-size-lg; font-weight: 600; color: $color-panel-text;
 }
+
 .font-family-wrap select {
-  padding: 7px 10px; border: 1px solid #555; border-radius: 8px;
-  background: rgba(255,255,255,0.06); color: #ddd; font-size: 13px;
+  padding: 7px 10px; border: 1px solid #555; border-radius: $radius-md;
+  background: $color-panel-surface; color: #ddd; font-size: $font-size-base;
   outline: none; cursor: pointer;
 }
-.preset-group { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.preset-group { display: flex; gap: $spacing-xs; flex-wrap: wrap; justify-content: space-around; }
+
 .preset-btn {
-  padding: 6px 12px; border: 1px solid #555; border-radius: 8px;
-  background: transparent; color: #bbb; font-size: 12px;
-  cursor: pointer; transition: all 0.2s;
+  padding: $spacing-sm $spacing-md; border: 1px solid #555; border-radius: $radius-md;
+  background: transparent; color: #bbb; font-size: $font-size-sm;
+  cursor: pointer; transition: all $duration-normal $easing-default;
+
+  &:hover { background: rgba(255, 255, 255, 0.06); color: #ddd; }
+  &.active { background: $color-brand; border-color: $color-brand; color: $color-white; }
 }
-.preset-btn:hover { background: rgba(255,255,255,0.06); color: #ddd; }
-.preset-btn.active { background: #e67e22; border-color: #e67e22; color: #fff; }
-.color-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.color-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-around; }
+
 .color-card-sm {
-  width: 36px; height: 36px; border-radius: 8px;
-  border: 2px solid rgba(255,255,255,0.1);
+  width: 36px; height: 36px; border-radius: $radius-md;
+  border: 2px solid rgba(255, 255, 255, 0.1);
   cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: all 0.2s;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  transition: all $duration-normal $easing-default;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+
+  &:hover { transform: scale(1.08); }
+  &.active { border-color: $color-brand; }
 }
-.color-card-sm:hover { transform: scale(1.08); }
-.color-card-sm.active { border-color: #e67e22; }
-.setting-controls { display: flex; flex-direction: column; gap: 12px; border-bottom: none !important; }
+
+.setting-controls {
+  display: flex; flex-direction: row; gap: $spacing-md;
+  border-bottom: none !important;
+}
+
 .control-row {
   display: flex; align-items: center; justify-content: space-between;
-  font-size: 14px; color: #ccc;
+  font-size: $font-size-md; color: #ccc;
 }
+
 .page-mode-trigger {
-  cursor: pointer; padding: 8px 0;
-  transition: color 0.15s;
+  cursor: pointer; padding: $spacing-sm 0;
+  transition: color $duration-fast $easing-default;
+
+  &:hover { color: $color-white; }
 }
-.page-mode-trigger:hover { color: #fff; }
-.pm-trigger-right { display: flex; align-items: center; gap: 6px; color: #888; }
-.pm-current { font-size: 13px; }
+
+.pm-trigger-right { display: flex; align-items: center; gap: $spacing-xs; color: #888; }
+.pm-current { font-size: $font-size-base; }
 .pm-arrow { color: #666; }
 
 /* ========== 三级面板 ========== */
 .level3-overlay {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.6); z-index: 60;
+  background: $color-panel-overlay; z-index: $z-index-overlay;
   display: flex; align-items: center; justify-content: center;
 }
+
 .level3-panel {
   width: 100%; max-width: 480px;
-  background: rgba(30,30,30,0.98); backdrop-filter: blur(20px);
-  border-radius: 16px; color: #eee;
+  background: rgba(30, 30, 30, 0.98); backdrop-filter: blur(20px);
+  border-radius: $radius-3xl; color: $color-panel-text;
   overflow: hidden;
 }
+
 .l3-header {
-  display: flex; align-items: center; padding: 16px 20px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; padding: $spacing-base $spacing-lg;
+  border-bottom: 1px solid $color-panel-border;
 }
+
 .l3-back {
-  display: flex; align-items: center; gap: 4px;
-  background: none; border: none; color: #e67e22;
-  font-size: 14px; cursor: pointer; padding: 4px 8px;
-  border-radius: 6px; transition: background 0.15s;
+  display: flex; align-items: center; gap: $spacing-xs;
+  background: none; border: none; color: $color-brand;
+  font-size: $font-size-md; cursor: pointer; padding: $spacing-xs $spacing-sm;
+  border-radius: $radius-sm; transition: background $duration-fast $easing-default;
+
+  &:hover { background: $color-brand-light; }
 }
-.l3-back:hover { background: rgba(230,126,34,0.1); }
-.l3-title { flex: 1; text-align: center; font-size: 16px; font-weight: 600; }
+
+.l3-title { flex: 1; text-align: center; font-size: $font-size-lg; font-weight: 600; }
 .l3-spacer { width: 70px; }
+
 .l3-grid {
-  display: flex; flex-wrap: wrap; gap: 12px;
-  justify-content: center; padding: 24px 20px 28px;
+  display: flex; flex-wrap: wrap; gap: $spacing-md;
+  justify-content: center; padding: $spacing-xl $spacing-lg $spacing-2xl;
 }
+
 .pm-card {
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  width: 72px; padding: 14px 6px;
-  background: rgba(255,255,255,0.04);
-  border: 2px solid rgba(255,255,255,0.08);
-  border-radius: 12px; cursor: pointer;
-  transition: all 0.2s; position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: $spacing-sm;
+  width: 72px; padding: 14px $spacing-xs;
+  background: $color-panel-surface;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  border-radius: $radius-xl; cursor: pointer;
+  transition: all $duration-normal $easing-default; position: relative;
+
+  &:hover { border-color: rgba(255, 255, 255, 0.2); background: $color-panel-surface-hover; }
+  &.active { border-color: $color-brand; background: $color-brand-light; }
 }
-.pm-card:hover { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); }
-.pm-card.active { border-color: #e67e22; background: rgba(230,126,34,0.1); }
+
 .pm-card-icon {
   width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
   color: #999;
 }
-.pm-card.active .pm-card-icon { color: #e67e22; }
+
+.pm-card.active .pm-card-icon { color: $color-brand; }
 .pm-card-icon :deep(svg) { width: 100%; height: 100%; }
-.pm-card-name { font-size: 12px; color: #bbb; white-space: nowrap; }
-.pm-card.active .pm-card-name { color: #e67e22; }
-.pm-card-check { position: absolute; top: 6px; right: 6px; }
+.pm-card-name { font-size: $font-size-sm; color: #bbb; white-space: nowrap; }
+.pm-card.active .pm-card-name { color: $color-brand; }
+.pm-card-check { position: absolute; top: $spacing-xs; right: $spacing-xs; }
 
 /* ========== 自动阅读专属面板 ========== */
 .auto-read-panel {
-  position: absolute; bottom: 0; left: 0; right: 0; z-index: 35;
-  background: rgba(0,0,0,0.96); backdrop-filter: blur(16px);
-  color: #eee; padding: 0;
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: $z-index-auto-read;
+  background: $color-panel-bg; backdrop-filter: blur(16px);
+  color: $color-panel-text; padding: 0;
   padding-bottom: env(safe-area-inset-bottom, 0);
+
+  &.panel-wide {
+    max-width: 480px;
+    margin: 0 auto;
+    border-radius: $radius-2xl $radius-2xl 0 0;
+  }
 }
-.auto-read-panel.panel-wide {
-  max-width: 480px;
-  margin: 0 auto;
-  border-radius: 14px 14px 0 0;
+
+.arp-speed { padding: $spacing-base $spacing-lg $spacing-md; }
+
+.arp-speed-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px; font-size: $font-size-base; color: #aaa;
 }
-.arp-speed { padding: 16px 20px 12px; }
-.arp-speed-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 13px; color: #aaa; }
-.speed-value { color: #e67e22; font-weight: 600; font-size: 16px; }
+
+.speed-value { color: $color-brand; font-weight: 600; font-size: $font-size-lg; }
+
 .arp-speed-track { display: flex; align-items: center; gap: 10px; }
+
 .arp-speed-track input[type="range"] {
-  flex: 1; height: 4px; -webkit-appearance: none; appearance: none;
-  background: #444; border-radius: 2px; outline: none;
+  flex: 1; @include slider-track;
 }
+
 .arp-speed-track input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none;
-  width: 18px; height: 18px; border-radius: 50%;
-  background: #e67e22; cursor: pointer;
+  @include slider-thumb(18px);
 }
-.speed-tip { font-size: 11px; color: #666; }
+
+.speed-tip { font-size: $font-size-xs; color: #666; }
+
 .arp-mode {
-  display: flex; gap: 8px; padding: 0 20px 16px;
+  display: flex; gap: $spacing-sm; padding: 0 $spacing-lg $spacing-base;
 }
+
 .arp-mode-item {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 10px; border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 10px; cursor: pointer;
-  font-size: 13px; color: #999; transition: all 0.2s;
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: $spacing-sm;
+  padding: 10px; border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: $radius-lg; cursor: pointer;
+  font-size: $font-size-base; color: #999; transition: all $duration-normal $easing-default;
+
+  &:hover { border-color: rgba(255, 255, 255, 0.25); color: #ddd; }
+  &.active { border-color: $color-brand; background: $color-brand-medium; color: $color-brand; }
 }
-.arp-mode-item:hover { border-color: rgba(255,255,255,0.25); color: #ddd; }
-.arp-mode-item.active { border-color: #e67e22; background: rgba(230,126,34,0.12); color: #e67e22; }
+
 .arp-exit-btn {
-  display: block; width: calc(100% - 40px); margin: 0 20px 16px;
-  padding: 12px; border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 10px; background: rgba(255,255,255,0.04);
-  color: #ccc; font-size: 14px; cursor: pointer;
-  text-align: center; transition: all 0.2s;
+  display: block; width: calc(100% - 40px); margin: 0 $spacing-lg $spacing-base;
+  padding: $spacing-md; border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: $radius-lg; background: $color-panel-surface;
+  color: #ccc; font-size: $font-size-md; cursor: pointer;
+  text-align: center; transition: all $duration-normal $easing-default;
+
+  &:hover { background: rgba(255, 255, 255, 0.08); color: $color-white; }
 }
-.arp-exit-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
-
-/* ========== Transitions ========== */
-.slide-down-enter-active, .slide-down-leave-active { transition: transform 0.25s ease, opacity 0.25s ease; }
-.slide-down-enter-from, .slide-down-leave-to { transform: translateY(-100%); opacity: 0; }
-
-.slide-up-enter-active, .slide-up-leave-active { transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1); }
-.slide-up-enter-from, .slide-up-leave-to { transform: translateY(100%); }
-
-.fade-scale-enter-active { transition: opacity 0.2s ease, transform 0.2s ease; }
-.fade-scale-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
-.fade-scale-enter-from, .fade-scale-leave-to { opacity: 0; transform: scale(0.95); }
 </style>

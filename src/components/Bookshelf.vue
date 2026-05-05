@@ -141,16 +141,16 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
 .bookshelf {
   min-height: 100vh;
-  background: #f0ebe3;
-  padding-bottom: 20px;
-  transition: background 0.3s;
-}
+  background: $color-shelf-bg-day;
+  padding-bottom: $spacing-lg;
+  transition: background $duration-slow $easing-default;
 
-.bookshelf.night-mode {
-  background: #1a1a1a;
+  @include night-mode {
+    background: $color-shelf-bg-night;
+  }
 }
 
 /* 顶部栏 */
@@ -158,142 +158,138 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 24px;
-  background: rgba(255,255,255,0.7);
+  padding: $spacing-base $spacing-xl;
+  background: $color-shelf-header-day;
   backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
   z-index: 10;
-}
 
-.night-mode .shelf-header {
-  background: rgba(30,30,30,0.9);
+  @include night-mode {
+    background: $color-shelf-header-night;
+  }
 }
 
 .shelf-title {
-  font-size: 22px;
+  font-size: $font-size-2xl;
   font-weight: 700;
   color: #333;
   display: flex;
   align-items: center;
-  gap: 8px;
-}
+  gap: $spacing-sm;
 
-.night-mode .shelf-title {
-  color: #ddd;
+  @include night-mode {
+    color: #ddd;
+  }
 }
 
 .shelf-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: $spacing-md;
 }
 
 .sort-select select {
-  padding: 6px 12px;
+  padding: $spacing-xs $spacing-md;
   border: 1px solid #ddd;
-  border-radius: 8px;
-  background: #fff;
+  border-radius: $radius-md;
+  background: $color-white;
   color: #333;
-  font-size: 13px;
+  font-size: $font-size-base;
   outline: none;
   cursor: pointer;
-}
 
-.night-mode .sort-select select {
-  background: #333;
-  border-color: #555;
-  color: #ccc;
+  @include night-mode {
+    background: #333;
+    border-color: #555;
+    color: #ccc;
+  }
 }
 
 .btn-add {
-  background: #e67e22;
-  color: #fff;
+  background: $color-brand;
+  color: $color-white;
   border: none;
-  padding: 8px 18px;
-  border-radius: 8px;
-  font-size: 14px;
+  padding: $spacing-sm 18px;
+  border-radius: $radius-md;
+  font-size: $font-size-md;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s;
-}
+  transition: background $duration-normal $easing-default;
 
-.btn-add:hover {
-  background: #d35400;
+  &:hover {
+    background: $color-brand-hover;
+  }
 }
 
 /* 书籍网格 */
 .shelf-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 20px;
-  padding: 24px;
+  gap: $spacing-lg;
+  padding: $spacing-xl;
 }
 
 .book-card {
   cursor: pointer;
-  transition: transform 0.2s;
-  border-radius: 8px;
+  transition: transform $duration-normal $easing-default;
+  border-radius: $radius-md;
   overflow: hidden;
-}
 
-.book-card:hover {
-  transform: translateY(-4px);
+  &:hover {
+    transform: translateY(-4px);
+  }
 }
 
 .book-cover {
   width: 100%;
   height: 190px;
-  border-radius: 8px;
+  border-radius: $radius-md;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  padding: $spacing-base;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .book-cover-title {
-  color: #fff;
-  font-size: 16px;
+  color: $color-white;
+  font-size: $font-size-lg;
   font-weight: 700;
   text-align: center;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   word-break: break-all;
   line-height: 1.4;
   max-height: 100%;
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
+  @include text-clamp(5);
 }
 
 .book-info {
-  padding: 8px 4px;
+  padding: $spacing-sm $spacing-xs;
 }
 
 .book-name {
-  font-size: 13px;
+  font-size: $font-size-base;
   font-weight: 600;
   color: #333;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+  @include text-ellipsis;
 
-.night-mode .book-name {
-  color: #ccc;
+  @include night-mode {
+    color: #ccc;
+  }
 }
 
 .book-meta {
   display: flex;
   justify-content: space-between;
-  margin-top: 4px;
-  font-size: 11px;
-  color: #999;
+  margin-top: $spacing-xs;
+  font-size: $font-size-xs;
+  color: $color-text-secondary-day;
 }
 
 .book-progress {
-  color: #e67e22;
+  color: $color-brand;
   font-weight: 600;
 }
 
@@ -304,64 +300,64 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   height: 60vh;
-  color: #999;
+  color: $color-text-secondary-day;
 }
 
 .empty-icon {
   display: flex;
   justify-content: center;
   opacity: 0.5;
-  margin-bottom: 16px;
-  color: #999;
+  margin-bottom: $spacing-base;
+  color: $color-text-secondary-day;
 }
 
 .empty-text {
-  font-size: 18px;
+  font-size: $font-size-xl;
   color: #888;
-  margin-bottom: 8px;
+  margin-bottom: $spacing-sm;
 }
 
 .empty-hint {
-  font-size: 14px;
+  font-size: $font-size-md;
   color: #aaa;
 }
 
 /* 右键菜单 */
 .context-menu {
   position: fixed;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-  z-index: 100;
+  background: $color-white;
+  border-radius: $radius-md;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: $z-index-context-menu;
   min-width: 120px;
   overflow: hidden;
-}
 
-.night-mode .context-menu {
-  background: #333;
+  @include night-mode {
+    background: #333;
+  }
 }
 
 .context-item {
-  padding: 10px 16px;
-  font-size: 13px;
+  padding: 10px $spacing-base;
+  font-size: $font-size-base;
   cursor: pointer;
   color: #333;
-  transition: background 0.15s;
-}
+  transition: background $duration-fast $easing-default;
 
-.night-mode .context-item {
-  color: #ccc;
-}
+  @include night-mode {
+    color: #ccc;
+  }
 
-.context-item:hover {
-  background: #f0f0f0;
-}
+  &:hover {
+    background: #f0f0f0;
 
-.night-mode .context-item:hover {
-  background: #444;
-}
+    @include night-mode {
+      background: #444;
+    }
+  }
 
-.context-item.danger {
-  color: #e74c3c;
+  &.danger {
+    color: $color-danger;
+  }
 }
 </style>

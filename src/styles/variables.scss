@@ -1,0 +1,98 @@
+// ========== 颜色 ==========
+// 品牌色
+$color-brand: #e67e22;
+$color-brand-hover: #d35400;
+$color-brand-light: rgba(230, 126, 34, 0.1);
+$color-brand-medium: rgba(230, 126, 34, 0.12);
+
+// 日间模式
+$color-bg-day: #f5f0e8;
+$color-text-day: #2c2c2c;
+$color-text-secondary-day: #999;
+$color-text-muted-day: #bbb;
+$color-border-day: rgba(0, 0, 0, 0.06);
+
+// 夜间模式
+$color-bg-night: #1a1a1a;
+$color-text-night: #888;
+$color-text-secondary-night: #555;
+$color-text-muted-night: #666;
+$color-border-night: rgba(255, 255, 255, 0.06);
+
+// 书架
+$color-shelf-bg-day: #f0ebe3;
+$color-shelf-bg-night: #1a1a1a;
+$color-shelf-header-day: rgba(255, 255, 255, 0.7);
+$color-shelf-header-night: rgba(30, 30, 30, 0.9);
+
+// 面板
+$color-panel-bg: rgba(0, 0, 0, 0.95);
+$color-panel-bg-light: rgba(0, 0, 0, 0.92);
+$color-panel-text: #eee;
+$color-panel-text-muted: #999;
+$color-panel-border: rgba(255, 255, 255, 0.08);
+$color-panel-surface: rgba(255, 255, 255, 0.04);
+$color-panel-surface-hover: rgba(255, 255, 255, 0.06);
+$color-panel-overlay: rgba(0, 0, 0, 0.6);
+
+// 通用
+$color-danger: #e74c3c;
+$color-white: #fff;
+$color-black: #000;
+
+// ========== 字体 ==========
+$font-family-base: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+$font-family-songti: "SimSun", "Songti SC", serif;
+$font-family-heiti: "SimHei", "Heiti SC", sans-serif;
+$font-family-kaiti: "KaiTi", "STKaiti", serif;
+$font-family-fangsong: "FangSong", "STFangsong", serif;
+
+$font-size-xs: 11px;
+$font-size-sm: 12px;
+$font-size-base: 13px;
+$font-size-md: 14px;
+$font-size-lg: 16px;
+$font-size-xl: 18px;
+$font-size-2xl: 22px;
+
+// ========== 间距 ==========
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing-md: 12px;
+$spacing-base: 16px;
+$spacing-lg: 20px;
+$spacing-xl: 24px;
+$spacing-2xl: 28px;
+
+// ========== 圆角 ==========
+$radius-sm: 6px;
+$radius-md: 8px;
+$radius-lg: 10px;
+$radius-xl: 12px;
+$radius-2xl: 14px;
+$radius-3xl: 16px;
+$radius-full: 50%;
+
+// ========== 滚动条 ==========
+$scrollbar-width: 6px;
+$scrollbar-thumb: rgba(0, 0, 0, 0.12);
+$scrollbar-thumb-hover: rgba(0, 0, 0, 0.2);
+
+// ========== 动画 ==========
+$duration-fast: 0.15s;
+$duration-normal: 0.2s;
+$duration-slow: 0.3s;
+$easing-default: ease;
+$easing-slide: cubic-bezier(0.32, 0.72, 0, 1);
+
+// ========== 层级 ==========
+$z-index-info: 5;
+$z-index-panel-2: 25;
+$z-index-panel-1: 30;
+$z-index-auto-read: 35;
+$z-index-top-bar: 40;
+$z-index-overlay: 60;
+$z-index-context-menu: 100;
+
+// ========== 断点 ==========
+$breakpoint-wide: 600px;
