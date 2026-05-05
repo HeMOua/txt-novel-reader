@@ -14,33 +14,15 @@
       </header>
     </transition>
 
-    <!-- 阅读内容区域 — 所有章节连续渲染 -->
+    <!-- 阅读内容区域：滑动窗口多章渲染 -->
     <div class="reader-scroll" ref="scrollArea" @scroll="onScroll">
-      <div class="reader-content" :style="contentStyle">
-        <div
-          v-for="(ch, i) in chapters"
-          :key="i"
-          class="chapter-block"
-          :data-chapter-index="i"
-          :ref="el => setChapterRef(el, i)"
-        >
-          <div class="chapter-header">
-            <h2 class="chapter-title-inline">{{ ch.title }}</h2>
-          </div>
-          <div class="chapter-body" v-html="renderChapterContent(ch.content)"></div>
-        </div>
+      <div class="reader-content" :style="contentStyle" ref="contentEl">
+        <!-- 由 JS 动态管理章节 DOM，不使用 v-for 全量渲染 -->
       </div>
     </div>
 
-    <!-- 覆盖翻页模式 -->
-    <div v-if="isCoverMode && !showBars" class="cover-page-container" :style="contentStyle">
-      <div class="cover-page" v-html="coverPageContent"></div>
-    </div>
-
     <!-- 常驻左上角章节信息 -->
-    <div class="chapter-label-fixed" v-if="!showBars">
-      {{ currentChapterLabel }}
-    </div>
+    <div class="chapter-label-fixed" v-if="!showBars">{{ currentChapterLabel }}</div>
 
     <!-- 常驻底部信息栏 -->
     <footer class="reader-info-bar" v-if="!showBars">
@@ -51,39 +33,24 @@
     <!-- 底部功能栏 -->
     <transition name="slide-up">
       <div v-if="showBars" class="reader-bottom-bar" @click.stop>
-        <!-- 第一行：章节导航 + 进度条 -->
         <div class="bar-row nav-row">
-          <button class="bar-btn" @click="prevChapter" :disabled="currentChapterIndex <= 0">
-            上一章
-          </button>
+          <button class="bar-btn" @click="prevChapter" :disabled="currentChapterIndex <= 0">上一章</button>
           <div class="progress-slider">
-            <input
-              type="range"
-              min="0"
-              :max="Math.max(totalChapters - 1, 0)"
-              v-model.number="sliderChapter"
-              @input="onSliderChange"
-              class="slider"
-            />
+            <input type="range" min="0" :max="Math.max(totalChapters - 1, 0)"
+              v-model.number="sliderChapter" @input="onSliderChange" class="slider" />
           </div>
-          <button class="bar-btn" @click="nextChapter" :disabled="currentChapterIndex >= totalChapters - 1">
-            下一章
-          </button>
+          <button class="bar-btn" @click="nextChapter" :disabled="currentChapterIndex >= totalChapters - 1">下一章</button>
         </div>
-
-        <!-- 第二行：功能按钮 -->
         <div class="bar-row func-row">
           <button class="func-btn" @click="showCatalog = true">
-            <span class="func-icon">📋</span>
-            <span>目录</span>
+            <span class="func-icon">📋</span><span>目录</span>
           </button>
           <button class="func-btn" @click="toggleNightMode">
             <span class="func-icon">{{ settings.nightMode ? '☀️' : '🌙' }}</span>
             <span>{{ settings.nightMode ? '日间' : '夜间' }}</span>
           </button>
           <button class="func-btn" @click="showSettings = !showSettings">
-            <span class="func-icon">⚙️</span>
-            <span>设置</span>
+            <span class="func-icon">⚙️</span><span>设置</span>
           </button>
         </div>
       </div>
@@ -98,13 +65,9 @@
             <button class="close-btn" @click="showCatalog = false">✕</button>
           </div>
           <div class="catalog-list">
-            <div
-              v-for="(ch, i) in chapters"
-              :key="i"
-              class="catalog-item"
-              :class="{ active: i === currentChapterIndex }"
-              @click="jumpToChapter(i)"
-            >
+            <div v-for="(ch, i) in chapters" :key="i"
+              class="catalog-item" :class="{ active: i === currentChapterIndex }"
+              @click="jumpToChapter(i)">
               <span class="chapter-index">{{ i + 1 }}</span>
               <span class="chapter-title">{{ ch.title }}</span>
             </div>
@@ -116,7 +79,6 @@
     <!-- 设置面板 -->
     <transition name="slide-up">
       <div v-if="showSettings" class="settings-panel" @click.stop>
-        <!-- 第一行：字体控制 -->
         <div class="settings-row font-row">
           <button class="font-ctrl-btn" @click="changeFontSize(-1)">A-</button>
           <span class="font-size-display">{{ settings.fontSize }}</span>
@@ -127,127 +89,47 @@
             </select>
           </div>
         </div>
-
-        <!-- 第二行：行间距 -->
         <div class="settings-row spacing-row">
-          <button
-            v-for="preset in LINE_HEIGHT_PRESETS"
-            :key="preset.id"
-            class="preset-btn"
-            :class="{ active: Math.abs(settings.lineHeight - preset.value) < 0.01 }"
-            @click="setLineHeight(preset.value)"
-          >
-            {{ preset.name }}
-          </button>
-          <button class="preset-btn more-btn" @click="showMoreSpacing = !showMoreSpacing">
-            更多间距
-          </button>
+          <button v-for="preset in LINE_HEIGHT_PRESETS" :key="preset.id"
+            class="preset-btn" :class="{ active: Math.abs(settings.lineHeight - preset.value) < 0.01 }"
+            @click="setLineHeight(preset.value)">{{ preset.name }}</button>
+          <button class="preset-btn more-btn" @click="showMoreSpacing = !showMoreSpacing">更多间距</button>
         </div>
-
-        <!-- 更多间距 -->
         <transition name="expand">
           <div v-if="showMoreSpacing" class="more-settings">
-            <div class="slider-row">
-              <label>行间距</label>
-              <input type="range" min="1" max="4" step="0.1" v-model.number="settings.lineHeight" @input="onSettingsChange" />
-              <span>{{ settings.lineHeight.toFixed(1) }}</span>
-            </div>
-            <div class="slider-row">
-              <label>段间距</label>
-              <input type="range" min="0" max="40" step="2" v-model.number="settings.paragraphSpacing" @input="onSettingsChange" />
-              <span>{{ settings.paragraphSpacing }}px</span>
-            </div>
-            <div class="slider-row">
-              <label>上间距</label>
-              <input type="range" min="0" max="60" step="4" v-model.number="settings.topMargin" @input="onSettingsChange" />
-              <span>{{ settings.topMargin }}px</span>
-            </div>
-            <div class="slider-row">
-              <label>下间距</label>
-              <input type="range" min="0" max="60" step="4" v-model.number="settings.bottomMargin" @input="onSettingsChange" />
-              <span>{{ settings.bottomMargin }}px</span>
-            </div>
-            <div class="slider-row">
-              <label>左右间距</label>
-              <input type="range" min="8" max="80" step="4" v-model.number="settings.leftMargin" @input="onSettingsChange" />
-              <span>{{ settings.leftMargin }}px</span>
-            </div>
+            <div class="slider-row"><label>行间距</label><input type="range" min="1" max="4" step="0.1" v-model.number="settings.lineHeight" @input="onSettingsChange" /><span>{{ settings.lineHeight.toFixed(1) }}</span></div>
+            <div class="slider-row"><label>段间距</label><input type="range" min="0" max="40" step="2" v-model.number="settings.paragraphSpacing" @input="onSettingsChange" /><span>{{ settings.paragraphSpacing }}px</span></div>
+            <div class="slider-row"><label>左右间距</label><input type="range" min="8" max="80" step="4" v-model.number="settings.leftMargin" @input="onSettingsChange" /><span>{{ settings.leftMargin }}px</span></div>
           </div>
         </transition>
-
-        <!-- 第三行：背景设置 -->
         <div class="settings-row theme-row">
-          <button
-            v-for="theme in THEMES"
-            :key="theme.id"
-            class="theme-btn"
+          <button v-for="theme in THEMES" :key="theme.id" class="theme-btn"
             :class="{ active: settings.theme === theme.id }"
             :style="{ background: theme.bgColor, color: theme.fontColor }"
-            @click="setTheme(theme)"
-          >
-            {{ theme.name }}
-          </button>
-          <button class="preset-btn more-btn" @click="showMoreBg = !showMoreBg">
-            更多背景
-          </button>
+            @click="setTheme(theme)">{{ theme.name }}</button>
         </div>
-
-        <!-- 更多背景 -->
-        <transition name="expand">
-          <div v-if="showMoreBg" class="more-settings">
-            <div class="color-row">
-              <label>字体颜色</label>
-              <input type="color" v-model="settings.fontColor" @input="onSettingsChange" />
-              <span>{{ settings.fontColor }}</span>
-            </div>
-            <div class="color-row">
-              <label>背景颜色</label>
-              <input type="color" v-model="settings.bgColor" @input="onSettingsChange" />
-              <span>{{ settings.bgColor }}</span>
-            </div>
-          </div>
-        </transition>
-
-        <!-- 第四行：自动阅读、翻页方式、更多 -->
         <div class="settings-row extra-row">
           <button class="func-btn-lg" @click="toggleAutoRead">
             <span class="func-icon">{{ autoReading ? '⏸' : '▶️' }}</span>
-            <span>{{ autoReading ? '暂停阅读' : '自动阅读' }}</span>
+            <span>{{ autoReading ? '暂停' : '自动阅读' }}</span>
           </button>
-          <button class="func-btn-lg" @click="cyclePageTurnMode">
-            <span class="func-icon">{{ pageTurnIcon }}</span>
-            <span>{{ pageTurnLabel }}</span>
-          </button>
-          <button class="func-btn-lg" @click="showMoreSettings = !showMoreSettings">
-            <span class="func-icon">🔧</span>
-            <span>更多设置</span>
-          </button>
-        </div>
-
-        <!-- 更多设置 -->
-        <transition name="expand">
-          <div v-if="showMoreSettings" class="more-settings">
-            <div class="slider-row" v-if="autoReading">
-              <label>自动阅读速度</label>
-              <input type="range" min="1" max="10" step="1" v-model.number="settings.autoReadSpeed" @input="onSettingsChange" />
-              <span>{{ settings.autoReadSpeed }}行/秒</span>
-            </div>
+          <div class="slider-row" v-if="autoReading" style="flex:1">
+            <label>速度</label><input type="range" min="1" max="10" step="1" v-model.number="settings.autoReadSpeed" @input="onSettingsChange" /><span>{{ settings.autoReadSpeed }}</span>
           </div>
-        </transition>
+        </div>
       </div>
     </transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { parseChapters, calcProgress } from '../utils/chapterParser.js'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { getChapterText, calcProgress } from '../utils/chapterParser.js'
 import { getSettings, saveSettings, THEMES, LINE_HEIGHT_PRESETS, FONT_FAMILIES, updateProgress, flushProgress } from '../utils/bookStore.js'
 
 const props = defineProps({
   book: { type: Object, required: true }
 })
-
 const emit = defineEmits(['back'])
 
 // ========== 状态 ==========
@@ -255,110 +137,39 @@ const showBars = ref(false)
 const showCatalog = ref(false)
 const showSettings = ref(false)
 const showMoreSpacing = ref(false)
-const showMoreBg = ref(false)
-const showMoreSettings = ref(false)
 const autoReading = ref(false)
 const currentTime = ref('')
 const progress = ref(props.book.progress || 0)
-const sliderChapter = ref(0)
+const sliderChapter = ref(props.book.currentChapterIndex || 0)
 const scrollArea = ref(null)
+const contentEl = ref(null)
 const currentChapterIndex = ref(props.book.currentChapterIndex || 0)
 
 let autoReadTimer = null
-let chapterRefs = {}
-let isRestoringPosition = false
+
+// ========== 滑动窗口渲染 ==========
+// 渲染窗口：[rangeStart, rangeEnd] 闭区间
+// 当前章节始终在窗口内，窗口最大跨度 MAX_RANGE
+const MAX_RANGE = 4   // 最多同时渲染的章节数
+const BUFFER_AHEAD = 1 // 向前/后多渲染的章节数
+
+const rangeStart = ref(0)
+const rangeEnd = ref(0)
+const chapterDomMap = new Map()  // chapterIndex -> DOM element
 
 // ========== 设置 ==========
 const settings = ref(getSettings())
 
-// ========== 章节解析 ==========
-const chapters = computed(() => {
-  if (!props.book?.content) return []
-  return parseChapters(props.book.content)
-})
-
+// ========== 基础计算 ==========
+const chapters = computed(() => props.book.chapters || [])
 const totalChapters = computed(() => chapters.value.length)
+const fullText = computed(() => props.book.fullText || '')
 
-const currentChapterName = computed(() => {
-  if (chapters.value.length === 0) return ''
-  return chapters.value[currentChapterIndex.value]?.title || ''
-})
+const currentChapterMeta = computed(() => chapters.value[currentChapterIndex.value] || null)
+const currentChapterTitle = computed(() => currentChapterMeta.value?.title || '')
+const currentChapterLabel = computed(() => currentChapterTitle.value || `第${currentChapterIndex.value + 1}章`)
 
-const currentChapterLabel = computed(() => {
-  if (chapters.value.length === 0) return ''
-  const idx = currentChapterIndex.value
-  const ch = chapters.value[idx]
-  if (!ch) return ''
-  return `第${idx + 1}章 ${ch.title}`
-})
-
-// ========== 翻页模式 ==========
-// scroll: 连续滚动  cover: 覆盖翻页
-const PAGE_TURN_MODES = ['scroll', 'cover']
-const PAGE_TURN_LABELS = { scroll: '滚屏', cover: '覆盖' }
-const PAGE_TURN_ICONS = { scroll: '📜', cover: '📄' }
-
-const isCoverMode = computed(() => settings.value.pageTurnMode === 'cover')
-
-const pageTurnLabel = computed(() => PAGE_TURN_LABELS[settings.value.pageTurnMode] || '滚屏')
-const pageTurnIcon = computed(() => PAGE_TURN_ICONS[settings.value.pageTurnMode] || '📜')
-
-function cyclePageTurnMode() {
-  const idx = PAGE_TURN_MODES.indexOf(settings.value.pageTurnMode)
-  const next = PAGE_TURN_MODES[(idx + 1) % PAGE_TURN_MODES.length]
-  settings.value.pageTurnMode = next
-  onSettingsChange()
-  // 如果切到覆盖模式，启动自动阅读相关逻辑
-  if (autoReading.value) {
-    startAutoRead()
-  }
-}
-
-// ========== 渲染 ==========
-function renderChapterContent(content) {
-  return content
-    .split('\n')
-    .filter(line => line.trim())
-    .map(line => `<p>${escapeHtml(line.trim())}</p>`)
-    .join('')
-}
-
-function escapeHtml(text) {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
-
-// ========== 覆盖翻页内容 ==========
-const coverPageLines = computed(() => {
-  // 收集当前章节及后续章节的所有段落行
-  const allLines = []
-  for (let i = currentChapterIndex.value; i < chapters.value.length; i++) {
-    const ch = chapters.value[i]
-    const lines = ch.content.split('\n').filter(l => l.trim())
-    allLines.push(...lines)
-  }
-  return allLines
-})
-
-const linesPerPage = computed(() => {
-  // 根据容器高度和字体大小计算每页行数
-  const viewHeight = 600 // 近似值
-  const lineH = settings.value.fontSize * settings.value.lineHeight
-  return Math.max(1, Math.floor(viewHeight / lineH))
-})
-
-const coverPageIndex = ref(0)
-
-const coverPageContent = computed(() => {
-  const start = coverPageIndex.value * linesPerPage.value
-  const pageLines = coverPageLines.value.slice(start, start + linesPerPage.value)
-  if (pageLines.length === 0) return '<p style="text-align:center;color:#999;">已到最后</p>'
-  return pageLines.map(line => `<p>${escapeHtml(line.trim())}</p>`).join('')
-})
-
-// ========== 样式计算 ==========
+// ========== 样式 ==========
 const readerStyle = computed(() => ({
   background: settings.value.nightMode ? '#1a1a1a' : settings.value.bgColor,
   color: settings.value.nightMode ? '#888' : settings.value.fontColor,
@@ -370,258 +181,331 @@ const contentStyle = computed(() => {
     fontSize: settings.value.fontSize + 'px',
     fontFamily: ff ? ff.value : '',
     lineHeight: settings.value.lineHeight,
-    paddingTop: settings.value.topMargin + 'px',
-    paddingBottom: settings.value.bottomMargin + 'px',
+    paddingTop: '24px',
+    paddingBottom: '80px',
     paddingLeft: settings.value.leftMargin + 'px',
-    paddingRight: settings.value.rightMargin + 'px',
+    paddingRight: settings.value.leftMargin + 'px',
   }
 })
 
-// ========== 章节引用收集 ==========
-function setChapterRef(el, index) {
-  if (el) {
-    chapterRefs[index] = el
+// ========== 核心渲染 ==========
+
+/**
+ * 渲染一个章节的 DOM 节点（同步插入所有段落）
+ * @returns {HTMLElement} 章节容器
+ */
+function renderChapterDom(chapterIdx) {
+  const meta = chapters.value[chapterIdx]
+  if (!meta) return null
+
+  const container = document.createElement('div')
+  container.className = 'chapter-block'
+  container.dataset.chapterIndex = chapterIdx
+
+  // 章节标题
+  const header = document.createElement('div')
+  header.className = 'chapter-header'
+  const title = document.createElement('h2')
+  title.className = 'chapter-title-inline'
+  title.textContent = meta.title
+  header.appendChild(title)
+  container.appendChild(header)
+
+  // 正文容器
+  const body = document.createElement('div')
+  body.className = 'chapter-body'
+  container.appendChild(body)
+
+  // 同步插入所有段落
+  const text = getChapterText(fullText.value, meta)
+  const lines = text.split('\n').filter(l => l.trim())
+
+  if (lines.length === 0) {
+    body.innerHTML = '<p style="color:#999;text-align:center">（本章无内容）</p>'
+    return container
   }
+
+  const fragment = document.createDocumentFragment()
+  for (const line of lines) {
+    const p = document.createElement('p')
+    p.textContent = line.trim()
+    fragment.appendChild(p)
+  }
+  body.appendChild(fragment)
+
+  return container
 }
 
-// ========== 交互 ==========
-function onReaderClick(e) {
-  // 覆盖模式下直接切换工具栏
-  if (isCoverMode.value) {
-    showBars.value = !showBars.value
-    if (!showBars.value) {
-      closeSubPanels()
+/**
+ * 重建整个渲染窗口
+ */
+function rebuildWindow(centerIdx, scrollRatio = 0) {
+  if (!contentEl.value) return
+
+  // 清空
+  contentEl.value.innerHTML = ''
+  chapterDomMap.clear()
+
+  // 计算窗口范围
+  const start = Math.max(0, centerIdx - BUFFER_AHEAD)
+  const end = Math.min(totalChapters.value - 1, centerIdx + BUFFER_AHEAD)
+  rangeStart.value = start
+  rangeEnd.value = end
+
+  // 渲染窗口内所有章节
+  for (let i = start; i <= end; i++) {
+    const dom = renderChapterDom(i)
+    if (dom) {
+      contentEl.value.appendChild(dom)
+      chapterDomMap.set(i, dom)
     }
-    return
   }
 
-  const rect = e.currentTarget.getBoundingClientRect()
-  const y = e.clientY - rect.top
-  const height = rect.height
-  const zone = y / height
+  // 用双层 rAF 等待浏览器完成布局，再读取 offsetTop
+  isRestoring = true
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (!scrollArea.value) return
+      const targetDom = chapterDomMap.get(centerIdx)
+      if (targetDom && scrollRatio > 0) {
+        const chapterH = targetDom.offsetHeight
+        const containerH = scrollArea.value.clientHeight
+        scrollArea.value.scrollTop = targetDom.offsetTop + Math.round(scrollRatio * Math.max(0, chapterH - containerH))
+      } else if (targetDom) {
+        scrollArea.value.scrollTop = targetDom.offsetTop
+      }
+      // 延迟解锁，防止 scrollTop 赋值触发的 scroll 事件被误处理
+      setTimeout(() => { isRestoring = false }, 100)
+    })
+  })
+}
 
-  if (zone > 0.25 && zone < 0.75) {
-    showBars.value = !showBars.value
-    if (!showBars.value) {
-      closeSubPanels()
-    }
-  } else if (zone <= 0.25) {
-    scrollUp()
-  } else {
-    scrollDown()
+/**
+ * 在底部追加下一章
+ */
+function appendChapterBelow() {
+  const nextIdx = rangeEnd.value + 1
+  if (nextIdx >= totalChapters.value) return
+  if (!contentEl.value) return
+
+  const dom = renderChapterDom(nextIdx)
+  if (dom) {
+    contentEl.value.appendChild(dom)
+    chapterDomMap.set(nextIdx, dom)
+    rangeEnd.value = nextIdx
+  }
+
+  // 如果窗口过大，移除顶部章节
+  trimFromTop()
+}
+
+/**
+ * 在顶部插入上一章
+ */
+function prependChapterAbove() {
+  const prevIdx = rangeStart.value - 1
+  if (prevIdx < 0) return
+  if (!contentEl.value || !scrollArea.value) return
+
+  // 记录插入前的滚动位置和总高度
+  const oldScrollTop = scrollArea.value.scrollTop
+  const oldScrollHeight = scrollArea.value.scrollHeight
+
+  const dom = renderChapterDom(prevIdx)
+  if (!dom) return
+
+  contentEl.value.insertBefore(dom, contentEl.value.firstChild)
+  chapterDomMap.set(prevIdx, dom)
+  rangeStart.value = prevIdx
+
+  // 用 rAF 等待布局完成，再修正 scrollTop，防止内容跳动
+  isRestoring = true
+  requestAnimationFrame(() => {
+    if (!scrollArea.value) { isRestoring = false; return }
+    const newScrollHeight = scrollArea.value.scrollHeight
+    scrollArea.value.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight)
+    isRestoring = false
+
+    // scroll 修正完成后再 trim，避免 trim 影响高度计算
+    trimFromBottom()
+  })
+}
+
+function trimFromTop() {
+  while (rangeEnd.value - rangeStart.value + 1 > MAX_RANGE && rangeStart.value < currentChapterIndex.value - 1) {
+    const dom = chapterDomMap.get(rangeStart.value)
+    if (dom) dom.remove()
+    chapterDomMap.delete(rangeStart.value)
+    rangeStart.value++
   }
 }
 
-function closeSubPanels() {
-  showSettings.value = false
-  showMoreSpacing.value = false
-  showMoreBg.value = false
-  showMoreSettings.value = false
+function trimFromBottom() {
+  while (rangeEnd.value - rangeStart.value + 1 > MAX_RANGE && rangeEnd.value > currentChapterIndex.value + 1) {
+    const dom = chapterDomMap.get(rangeEnd.value)
+    if (dom) dom.remove()
+    chapterDomMap.delete(rangeEnd.value)
+    rangeEnd.value--
+  }
 }
 
-function scrollUp() {
-  if (!scrollArea.value) return
-  scrollArea.value.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'auto' })
-}
+// ========== 滚动追踪 ==========
+let isRestoring = false
+let scrollThrottle = null
 
-function scrollDown() {
-  if (!scrollArea.value) return
-  scrollArea.value.scrollBy({ top: scrollArea.value.clientHeight * 0.8, behavior: 'auto' })
-}
-
-// ========== 滚动追踪当前章节 ==========
 function onScroll() {
-  if (isRestoringPosition) return
+  if (isRestoring) return
   if (!scrollArea.value) return
-  const { scrollTop, scrollHeight, clientHeight } = scrollArea.value
+  if (scrollThrottle) return
+  scrollThrottle = requestAnimationFrame(() => {
+    scrollThrottle = null
+    if (!scrollArea.value) return
 
-  // 通过章节 DOM 元素追踪当前可见章节
-  const viewportTop = scrollTop + 60 // 偏移一点
-  let detectedChapter = 0
+    const { scrollTop, scrollHeight, clientHeight } = scrollArea.value
 
-  for (let i = totalChapters.value - 1; i >= 0; i--) {
-    const el = chapterRefs[i]
-    if (el && el.offsetTop <= viewportTop) {
-      detectedChapter = i
-      break
+    // 1. 检测当前章节（通过 DOM 位置）
+    const viewportCenter = scrollTop + clientHeight / 2
+    let detectedChapter = currentChapterIndex.value
+    for (const [idx, dom] of chapterDomMap) {
+      if (dom.offsetTop <= viewportCenter && dom.offsetTop + dom.offsetHeight >= viewportCenter) {
+        detectedChapter = idx
+        break
+      }
     }
-  }
 
-  if (detectedChapter !== currentChapterIndex.value) {
-    currentChapterIndex.value = detectedChapter
-    sliderChapter.value = detectedChapter
-  }
+    if (detectedChapter !== currentChapterIndex.value) {
+      currentChapterIndex.value = detectedChapter
+      sliderChapter.value = detectedChapter
+    }
 
-  // 计算总进度
-  if (scrollHeight <= clientHeight) {
-    progress.value = 0
-  } else {
-    progress.value = Math.min(100, (scrollTop / (scrollHeight - clientHeight)) * 100)
-  }
+    // 2. 计算全书进度
+    const totalChars = fullText.value.length
+    if (totalChars > 0 && chapters.value[detectedChapter]) {
+      const chMeta = chapters.value[detectedChapter]
+      // 章节内滚动比例
+      const chDom = chapterDomMap.get(detectedChapter)
+      let chapterRatio = 0
+      if (chDom && chDom.offsetHeight > clientHeight) {
+        chapterRatio = Math.max(0, Math.min(1,
+          (scrollTop - chDom.offsetTop) / (chDom.offsetHeight - clientHeight)
+        ))
+      }
+      // 全书进度 = (已读字符数 / 总字符数) * 100
+      const readChars = chMeta.start + chapterRatio * (chMeta.end - chMeta.start)
+      progress.value = Math.min(100, (readChars / totalChars) * 100)
+    }
 
-  // 保存进度
-  updateProgress(props.book.filePath, currentChapterIndex.value, scrollTop, progress.value)
-}
+    // 3. 保存进度（章节+比例，不存绝对 scrollTop）
+    saveReadingProgress()
 
-// ========== 章节导航 ==========
-function prevChapter() {
-  if (currentChapterIndex.value > 0) {
-    jumpToChapter(currentChapterIndex.value - 1)
-  }
-}
+    // 4. 滚到底部时追加下一章
+    if (scrollTop + clientHeight >= scrollHeight - 200) {
+      appendChapterBelow()
+    }
 
-function nextChapter() {
-  if (currentChapterIndex.value < totalChapters.value - 1) {
-    jumpToChapter(currentChapterIndex.value + 1)
-  }
-}
-
-function jumpToChapter(index) {
-  currentChapterIndex.value = index
-  sliderChapter.value = index
-  showCatalog.value = false
-
-  if (isCoverMode.value) {
-    coverPageIndex.value = 0
-    return
-  }
-
-  // 滚动到对应章节
-  nextTick(() => {
-    const el = chapterRefs[index]
-    if (el && scrollArea.value) {
-      scrollArea.value.scrollTo({ top: el.offsetTop - 10, behavior: 'auto' })
+    // 5. 滚到顶部时追加上一章
+    if (scrollTop <= 200 && rangeStart.value > 0) {
+      prependChapterAbove()
     }
   })
 }
 
-function onSliderChange() {
-  jumpToChapter(sliderChapter.value)
+// ========== 进度保存/恢复 ==========
+function saveReadingProgress() {
+  const chDom = chapterDomMap.get(currentChapterIndex.value)
+  let scrollRatio = 0
+  if (chDom && scrollArea.value) {
+    const chH = chDom.offsetHeight
+    const containerH = scrollArea.value.clientHeight
+    if (chH > containerH) {
+      scrollRatio = Math.max(0, Math.min(1,
+        (scrollArea.value.scrollTop - chDom.offsetTop) / (chH - containerH)
+      ))
+    }
+  }
+  updateProgress(props.book.filePath, currentChapterIndex.value, scrollRatio, progress.value)
 }
 
-// ========== 设置操作 ==========
+function restorePosition() {
+  const savedChapterIndex = props.book.currentChapterIndex || 0
+  const savedScrollRatio = props.book.currentScrollRatio || 0  // 0~1 的比例
+
+  currentChapterIndex.value = savedChapterIndex
+  sliderChapter.value = savedChapterIndex
+
+  // 用 savedRatio 重建窗口
+  rebuildWindow(savedChapterIndex, savedScrollRatio)
+}
+
+// ========== 章节跳转 ==========
+function jumpToChapter(index) {
+  if (index < 0 || index >= totalChapters.value) return
+  currentChapterIndex.value = index
+  sliderChapter.value = index
+  showCatalog.value = false
+  // 跳转：以目标章节为中心重建窗口，从头开始
+  rebuildWindow(index, 0)
+}
+function prevChapter() { jumpToChapter(currentChapterIndex.value - 1) }
+function nextChapter() { jumpToChapter(currentChapterIndex.value + 1) }
+function onSliderChange() { jumpToChapter(sliderChapter.value) }
+
+// ========== 设置 ==========
 function changeFontSize(delta) {
   settings.value.fontSize = Math.max(12, Math.min(36, settings.value.fontSize + delta))
   onSettingsChange()
 }
-
-function setLineHeight(value) {
-  settings.value.lineHeight = value
-  onSettingsChange()
-}
-
+function setLineHeight(value) { settings.value.lineHeight = value; onSettingsChange() }
 function setTheme(theme) {
-  settings.value.theme = theme.id
-  settings.value.fontColor = theme.fontColor
-  settings.value.bgColor = theme.bgColor
-  settings.value.nightMode = theme.id === 'night'
+  settings.value.theme = theme.id; settings.value.fontColor = theme.fontColor
+  settings.value.bgColor = theme.bgColor; settings.value.nightMode = theme.id === 'night'
   onSettingsChange()
 }
-
 function toggleNightMode() {
   settings.value.nightMode = !settings.value.nightMode
   if (settings.value.nightMode) {
-    settings.value.theme = 'night'
-    settings.value.fontColor = '#888'
-    settings.value.bgColor = '#1a1a1a'
+    settings.value.theme = 'night'; settings.value.fontColor = '#888'; settings.value.bgColor = '#1a1a1a'
   } else {
-    settings.value.theme = 'default'
-    settings.value.fontColor = '#2c2c2c'
-    settings.value.bgColor = '#f5f0e8'
+    settings.value.theme = 'default'; settings.value.fontColor = '#2c2c2c'; settings.value.bgColor = '#f5f0e8'
   }
   onSettingsChange()
 }
+function onSettingsChange() { saveSettings(settings.value); if (autoReading.value) startAutoRead() }
 
 // ========== 自动阅读 ==========
-function toggleAutoRead() {
-  autoReading.value = !autoReading.value
-  if (autoReading.value) {
-    startAutoRead()
-  } else {
-    stopAutoRead()
-  }
-}
-
+function toggleAutoRead() { autoReading.value = !autoReading.value; autoReading.value ? startAutoRead() : stopAutoRead() }
 function startAutoRead() {
   stopAutoRead()
+  const interval = 1000 / (settings.value.autoReadSpeed || 3)
+  autoReadTimer = setInterval(() => {
+    scrollArea.value?.scrollBy({ top: settings.value.fontSize * settings.value.lineHeight, behavior: 'auto' })
+  }, interval)
+}
+function stopAutoRead() { if (autoReadTimer) { clearInterval(autoReadTimer); autoReadTimer = null } }
 
-  if (isCoverMode.value) {
-    // 覆盖翻页模式：按间隔翻页
-    const interval = 60000 / (settings.value.autoReadSpeed * 10) // 每页停留时间
-    autoReadTimer = setInterval(() => {
-      const maxPage = Math.ceil(coverPageLines.value.length / linesPerPage.value) - 1
-      if (coverPageIndex.value < maxPage) {
-        coverPageIndex.value++
-      }
-    }, interval)
+// ========== 交互 ==========
+function onReaderClick(e) {
+  const rect = e.currentTarget.getBoundingClientRect()
+  const zone = (e.clientY - rect.top) / rect.height
+  if (zone > 0.25 && zone < 0.75) {
+    showBars.value = !showBars.value
+    if (!showBars.value) closeSubPanels()
+  } else if (zone <= 0.25) {
+    scrollArea.value?.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'auto' })
   } else {
-    // 滚屏模式：持续滚动
-    const interval = 1000 / (settings.value.autoReadSpeed || 3)
-    autoReadTimer = setInterval(() => {
-      if (scrollArea.value) {
-        scrollArea.value.scrollBy({ top: settings.value.fontSize * settings.value.lineHeight, behavior: 'auto' })
-      }
-    }, interval)
+    scrollArea.value?.scrollBy({ top: scrollArea.value.clientHeight * 0.8, behavior: 'auto' })
   }
 }
-
-function stopAutoRead() {
-  if (autoReadTimer) {
-    clearInterval(autoReadTimer)
-    autoReadTimer = null
-  }
-}
-
-function onSettingsChange() {
-  saveSettings(settings.value)
-  if (autoReading.value) {
-    startAutoRead()
-  }
-}
-
-// ========== 时钟 ==========
-function updateClock() {
-  const now = new Date()
-  currentTime.value = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
-}
+function closeSubPanels() { showSettings.value = false; showMoreSpacing.value = false }
 
 // ========== 键盘快捷键 ==========
 function onKeyDown(e) {
-  if (isCoverMode.value) {
-    // 覆盖模式下的键盘操作
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
-      const maxPage = Math.ceil(coverPageLines.value.length / linesPerPage.value) - 1
-      if (coverPageIndex.value < maxPage) coverPageIndex.value++
-      e.preventDefault()
-    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-      if (coverPageIndex.value > 0) coverPageIndex.value--
-      e.preventDefault()
-    } else if (e.key === 'Escape') {
-      handleEscape()
-      e.preventDefault()
-    }
-    return
-  }
-
   switch (e.key) {
-    case 'ArrowLeft':
-    case 'ArrowUp':
-      scrollUp()
-      e.preventDefault()
-      break
-    case 'ArrowRight':
-    case 'ArrowDown':
-    case ' ':
-      scrollDown()
-      e.preventDefault()
-      break
-    case 'Escape':
-      handleEscape()
-      e.preventDefault()
-      break
+    case 'ArrowLeft': case 'ArrowUp': scrollArea.value?.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'auto' }); e.preventDefault(); break
+    case 'ArrowRight': case 'ArrowDown': case ' ': scrollArea.value?.scrollBy({ top: scrollArea.value.clientHeight * 0.8, behavior: 'auto' }); e.preventDefault(); break
+    case 'Escape': handleEscape(); e.preventDefault(); break
   }
 }
-
 function handleEscape() {
   if (showCatalog.value) showCatalog.value = false
   else if (showSettings.value) showSettings.value = false
@@ -629,35 +513,29 @@ function handleEscape() {
   else emit('back')
 }
 
+function updateClock() {
+  const now = new Date()
+  currentTime.value = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0')
+}
+
 // ========== 初始化 ==========
 onMounted(() => {
-  sliderChapter.value = currentChapterIndex.value
   updateClock()
   const clockTimer = setInterval(updateClock, 10000)
-
   document.addEventListener('keydown', onKeyDown)
 
-  // 恢复阅读位置（等 DOM 渲染完）
-  if (isCoverMode.value) {
-    // 覆盖模式不恢复滚动位置
-  } else {
-    nextTick(() => {
-      const savedScrollTop = props.book.currentScrollTop
-      if (savedScrollTop && savedScrollTop > 0 && scrollArea.value) {
-        isRestoringPosition = true
-        scrollArea.value.scrollTop = savedScrollTop
-        // 等滚动完成后再开启追踪
-        setTimeout(() => {
-          isRestoringPosition = false
-        }, 100)
-      }
-    })
-  }
+  // 首次渲染：恢复阅读位置
+  nextTick(() => {
+    isRestoring = true
+    restorePosition()
+    // 给 DOM 一点时间完成渲染再开启滚动追踪
+    setTimeout(() => { isRestoring = false }, 300)
+  })
 
   onUnmounted(() => {
+    renderCancelToken.cancelled = true
     clearInterval(clockTimer)
     stopAutoRead()
-    // 确保进度已写入
     flushProgress()
     document.removeEventListener('keydown', onKeyDown)
   })
@@ -666,300 +544,106 @@ onMounted(() => {
 
 <style scoped>
 .reader-container {
-  position: relative;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  position: relative; height: 100vh;
+  display: flex; flex-direction: column; overflow: hidden;
   transition: background 0.3s, color 0.3s;
 }
-
-/* ===== 顶部栏 ===== */
 .reader-top-bar {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  padding: 10px 16px;
-  background: rgba(0,0,0,0.85);
-  backdrop-filter: blur(10px);
-  color: #eee;
+  position: absolute; top: 0; left: 0; right: 0; z-index: 20;
+  display: flex; align-items: center; padding: 10px 16px;
+  background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); color: #eee;
 }
-.night-mode .reader-top-bar { background: rgba(0,0,0,0.95); }
-
-.bar-btn {
-  background: none; border: none; color: #eee;
-  font-size: 14px; cursor: pointer; padding: 4px 10px;
-  border-radius: 4px; white-space: nowrap;
-}
+.bar-btn { background: none; border: none; color: #eee; font-size: 14px; cursor: pointer; padding: 4px 10px; border-radius: 4px; white-space: nowrap; }
 .bar-btn:hover { background: rgba(255,255,255,0.1); }
 .bar-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-
-.chapter-name-top {
-  flex: 1; text-align: center; font-size: 14px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ccc;
-}
+.chapter-name-top { flex: 1; text-align: center; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ccc; }
 .top-spacer { width: 60px; }
-
-/* ===== 左上角常驻章节信息 ===== */
 .chapter-label-fixed {
-  position: absolute;
-  top: 8px; left: 16px;
-  font-size: 12px;
+  position: absolute; top: 8px; left: 16px; font-size: 12px; z-index: 5;
   color: v-bind('settings.nightMode ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.2)"');
-  pointer-events: none;
-  z-index: 5;
-  max-width: 60%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: color 0.3s;
+  pointer-events: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-
-/* ===== 滚动区域 ===== */
-.reader-scroll {
-  flex: 1;
-  overflow-y: auto;
-  scroll-behavior: auto;
-}
+.reader-scroll { flex: 1; overflow-y: auto; scroll-behavior: auto; }
 .reader-scroll::-webkit-scrollbar { width: 6px; }
 .reader-scroll::-webkit-scrollbar-track { background: transparent; }
 .reader-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
 .night-mode .reader-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); }
+.reader-content { max-width: 800px; margin: 0 auto; word-wrap: break-word; text-align: justify; user-select: text; }
 
-.reader-content {
-  max-width: 800px;
-  margin: 0 auto;
-  word-wrap: break-word;
-  text-align: justify;
-  user-select: text;
-}
+/* 章节块 */
+.chapter-block { margin-bottom: 0; }
+.chapter-header { padding: 28px 0 16px; border-bottom: 1px solid v-bind('settings.nightMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"'); margin-bottom: 16px; }
+.chapter-title-inline { font-size: 1.2em; font-weight: 700; text-align: center; color: inherit; opacity: 0.85; }
+.chapter-body :deep(p) { text-indent: 2em; margin-bottom: v-bind('settings.paragraphSpacing + "px"'); line-height: inherit; }
 
-/* ===== 章节块 ===== */
-.chapter-block {
-  margin-bottom: 0;
-}
-
-.chapter-header {
-  padding: 28px 0 16px;
-  border-bottom: 1px solid v-bind('settings.nightMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"');
-  margin-bottom: 16px;
-}
-
-.chapter-title-inline {
-  font-size: 1.2em;
-  font-weight: 700;
-  text-align: center;
-  text-indent: 0;
-  color: inherit;
-  opacity: 0.85;
-}
-
-.chapter-body :deep(p) {
-  text-indent: 2em;
-  margin-bottom: v-bind('settings.paragraphSpacing + "px"');
-}
-
-/* ===== 覆盖翻页容器 ===== */
-.cover-page-container {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  z-index: 4;
-  overflow: hidden;
-  max-width: 800px;
-  margin: 0 auto;
-  padding-top: 28px;
-}
-
-.cover-page {
-  user-select: text;
-  text-align: justify;
-  word-wrap: break-word;
-}
-
-.cover-page :deep(p) {
-  text-indent: 2em;
-  margin-bottom: v-bind('settings.paragraphSpacing + "px"');
-}
-
-/* ===== 常驻底部信息栏 ===== */
 .reader-info-bar {
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  display: flex; justify-content: space-between;
-  padding: 4px 20px;
-  font-size: 11px;
-  color: v-bind('settings.nightMode ? "#555" : "#bbb"');
-  pointer-events: none;
-  z-index: 5;
-  transition: color 0.3s;
+  position: absolute; bottom: 0; left: 0; right: 0;
+  display: flex; justify-content: space-between; padding: 4px 20px;
+  font-size: 11px; color: v-bind('settings.nightMode ? "#555" : "#bbb"');
+  pointer-events: none; z-index: 5;
 }
-
-/* ===== 底部功能栏 ===== */
 .reader-bottom-bar {
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  z-index: 20;
-  background: rgba(0,0,0,0.9);
-  backdrop-filter: blur(10px);
-  padding: 12px 16px 20px;
-  color: #eee;
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 20;
+  background: rgba(0,0,0,0.9); backdrop-filter: blur(10px); padding: 12px 16px 20px; color: #eee;
 }
-.night-mode .reader-bottom-bar { background: rgba(0,0,0,0.95); }
-
 .bar-row { display: flex; align-items: center; gap: 10px; }
 .nav-row { margin-bottom: 14px; }
 .progress-slider { flex: 1; padding: 0 4px; }
-
-.slider {
-  width: 100%; height: 4px;
-  -webkit-appearance: none; appearance: none;
-  background: #444; border-radius: 2px; outline: none;
-}
-.slider::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none;
-  width: 16px; height: 16px; border-radius: 50%;
-  background: #e67e22; cursor: pointer;
-}
-
+.slider { width: 100%; height: 4px; -webkit-appearance: none; appearance: none; background: #444; border-radius: 2px; outline: none; }
+.slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #e67e22; cursor: pointer; }
 .func-row { display: flex; justify-content: space-around; }
-.func-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  background: none; border: none; color: #ccc; font-size: 11px;
-  cursor: pointer; padding: 4px 12px;
-}
+.func-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; color: #ccc; font-size: 11px; cursor: pointer; padding: 4px 12px; }
 .func-btn:hover { color: #fff; }
 .func-icon { font-size: 20px; }
 
-/* ===== 目录 ===== */
-.catalog-overlay {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.5); z-index: 50;
-}
-.catalog-panel {
-  position: absolute; left: 0; top: 0; bottom: 0;
-  width: 320px; max-width: 80vw;
-  background: #fff; box-shadow: 4px 0 16px rgba(0,0,0,0.2);
-  display: flex; flex-direction: column;
-}
+.catalog-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 50; }
+.catalog-panel { position: absolute; left: 0; top: 0; bottom: 0; width: 320px; max-width: 80vw; background: #fff; box-shadow: 4px 0 16px rgba(0,0,0,0.2); display: flex; flex-direction: column; }
 .night-mode .catalog-panel { background: #222; }
-
-.catalog-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 16px 20px; border-bottom: 1px solid #eee;
-}
+.catalog-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #eee; }
 .night-mode .catalog-header { border-color: #444; }
 .catalog-header h3 { font-size: 16px; color: #333; }
 .night-mode .catalog-header h3 { color: #ddd; }
-
-.close-btn {
-  background: none; border: none; font-size: 18px;
-  cursor: pointer; color: #999; padding: 4px;
-}
-
+.close-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #999; padding: 4px; }
 .catalog-list { flex: 1; overflow-y: auto; padding: 8px 0; }
-.catalog-item {
-  display: flex; align-items: center; padding: 10px 20px;
-  cursor: pointer; font-size: 14px; color: #555; transition: background 0.15s;
-}
+.catalog-item { display: flex; align-items: center; padding: 10px 20px; cursor: pointer; font-size: 14px; color: #555; transition: background 0.15s; }
 .night-mode .catalog-item { color: #bbb; }
 .catalog-item:hover { background: #f5f5f5; }
 .night-mode .catalog-item:hover { background: #333; }
 .catalog-item.active { color: #e67e22; background: #fff8f0; }
 .night-mode .catalog-item.active { background: #3a2a10; }
-
 .chapter-index { width: 32px; font-size: 12px; color: #bbb; flex-shrink: 0; }
 .chapter-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ===== 设置面板 ===== */
-.settings-panel {
-  position: absolute; bottom: 0; left: 0; right: 0;
-  z-index: 30; background: rgba(0,0,0,0.92); backdrop-filter: blur(10px);
-  padding: 16px; color: #eee; max-height: 70vh; overflow-y: auto;
-}
+.settings-panel { position: absolute; bottom: 0; left: 0; right: 0; z-index: 30; background: rgba(0,0,0,0.92); backdrop-filter: blur(10px); padding: 16px; color: #eee; max-height: 70vh; overflow-y: auto; }
 .settings-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; flex-wrap: wrap; }
-.font-row { gap: 10px; }
-
-.font-ctrl-btn {
-  width: 40px; height: 40px; border: 1px solid #555; border-radius: 8px;
-  background: transparent; color: #eee; font-size: 16px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-}
+.font-ctrl-btn { width: 40px; height: 40px; border: 1px solid #555; border-radius: 8px; background: transparent; color: #eee; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .font-ctrl-btn:hover { background: #333; }
 .font-size-display { min-width: 30px; text-align: center; font-size: 16px; font-weight: 600; }
-
-.font-family-select select {
-  padding: 6px 10px; border: 1px solid #555; border-radius: 6px;
-  background: #333; color: #eee; font-size: 13px; outline: none; cursor: pointer;
-}
-
-.preset-btn {
-  padding: 6px 12px; border: 1px solid #555; border-radius: 6px;
-  background: transparent; color: #ccc; font-size: 12px; cursor: pointer;
-  transition: all 0.2s;
-}
+.font-family-select select { padding: 6px 10px; border: 1px solid #555; border-radius: 6px; background: #333; color: #eee; font-size: 13px; outline: none; cursor: pointer; }
+.preset-btn { padding: 6px 12px; border: 1px solid #555; border-radius: 6px; background: transparent; color: #ccc; font-size: 12px; cursor: pointer; transition: all 0.2s; }
 .preset-btn:hover { background: #333; }
 .preset-btn.active { background: #e67e22; border-color: #e67e22; color: #fff; }
 .more-btn { border-style: dashed; }
-
-.theme-btn {
-  width: 48px; height: 32px; border: 2px solid transparent;
-  border-radius: 6px; font-size: 10px; cursor: pointer; transition: border-color 0.2s;
-}
+.theme-btn { width: 48px; height: 32px; border: 2px solid transparent; border-radius: 6px; font-size: 10px; cursor: pointer; transition: border-color 0.2s; }
 .theme-btn.active { border-color: #e67e22; }
-.theme-btn:hover { opacity: 0.85; }
-
-.func-btn-lg {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  background: none; border: none; color: #ccc; font-size: 11px;
-  cursor: pointer; padding: 4px 10px;
-}
+.func-btn-lg { display: flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: none; color: #ccc; font-size: 11px; cursor: pointer; padding: 4px 10px; }
 .func-btn-lg:hover { color: #fff; }
-
-.more-settings {
-  padding: 8px 12px; background: rgba(255,255,255,0.05);
-  border-radius: 8px; margin: 4px 0;
-}
-.slider-row {
-  display: flex; align-items: center; gap: 10px; padding: 6px 0;
-  font-size: 12px; color: #aaa;
-}
+.more-settings { padding: 8px 12px; background: rgba(255,255,255,0.05); border-radius: 8px; margin: 4px 0; }
+.slider-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 12px; color: #aaa; }
 .slider-row label { min-width: 60px; }
-.slider-row input[type="range"] {
-  flex: 1; height: 3px; -webkit-appearance: none; appearance: none;
-  background: #555; border-radius: 2px; outline: none;
-}
-.slider-row input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none;
-  width: 14px; height: 14px; border-radius: 50%;
-  background: #e67e22; cursor: pointer;
-}
+.slider-row input[type="range"] { flex: 1; height: 3px; -webkit-appearance: none; appearance: none; background: #555; border-radius: 2px; outline: none; }
+.slider-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #e67e22; cursor: pointer; }
 .slider-row span { min-width: 40px; text-align: right; font-size: 11px; }
+.extra-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
-.color-row {
-  display: flex; align-items: center; gap: 10px; padding: 6px 0;
-  font-size: 12px; color: #aaa;
-}
-.color-row label { min-width: 60px; }
-.color-row input[type="color"] {
-  width: 36px; height: 28px; border: none; border-radius: 4px;
-  cursor: pointer; background: none;
-}
-.color-row span { font-size: 11px; font-family: monospace; }
-
-/* ===== 动画 ===== */
 .slide-down-enter-active, .slide-down-leave-active { transition: transform 0.25s ease; }
 .slide-down-enter-from, .slide-down-leave-to { transform: translateY(-100%); }
-
 .slide-up-enter-active, .slide-up-leave-active { transition: transform 0.25s ease; }
 .slide-up-enter-from, .slide-up-leave-to { transform: translateY(100%); }
-
 .slide-left-enter-active, .slide-left-leave-active { transition: opacity 0.2s ease; }
 .slide-left-enter-from, .slide-left-leave-to { opacity: 0; }
 .slide-left-enter-active .catalog-panel { transition: transform 0.25s ease; }
 .slide-left-enter-from .catalog-panel { transform: translateX(-100%); }
-
 .expand-enter-active, .expand-leave-active { transition: all 0.2s ease; overflow: hidden; }
 .expand-enter-from, .expand-leave-to { opacity: 0; max-height: 0; padding: 0 12px; }
 </style>

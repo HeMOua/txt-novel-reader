@@ -90,8 +90,8 @@ export function saveBook(bookData) {
   const existing = books[bookData.filePath]
   const now = Date.now()
 
-  // 分离 content，不存入 localStorage
-  const { content, ...meta } = bookData
+  // 分离大字段，不存入 localStorage
+  const { content, fullText, chapters, ...meta } = bookData
 
   books[bookData.filePath] = {
     ...existing,
@@ -106,12 +106,21 @@ export function saveBook(bookData) {
 
 /**
  * 更新阅读进度（带节流，避免频繁写入）
+ * @param {string} filePath
+ * @param {number} chapterIndex - 当前章节索引
+ * @param {number} scrollRatio - 章节内滚动比例 0~1
+ * @param {number} progress - 全书阅读进度 0~100
  */
 let progressTimer = null
 const PENDING_PROGRESS = {}
 
-export function updateProgress(filePath, chapterIndex, scrollTop, progress) {
-  PENDING_PROGRESS[filePath] = { chapterIndex, scrollTop, progress, lastReadTime: Date.now() }
+export function updateProgress(filePath, chapterIndex, scrollRatio, progress) {
+  PENDING_PROGRESS[filePath] = {
+    currentChapterIndex: chapterIndex,
+    currentScrollRatio: scrollRatio,  // 0~1 比例，恢复时换算
+    progress,                          // 全书进度百分比
+    lastReadTime: Date.now()
+  }
 
   if (!progressTimer) {
     progressTimer = setTimeout(() => {
