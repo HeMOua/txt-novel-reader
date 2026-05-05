@@ -43,14 +43,14 @@
         </div>
         <div class="bar-row func-row">
           <button class="func-btn" @click="openCatalog">
-            <span class="func-icon">📋</span><span>目录</span>
+            <span class="func-icon"><SvgIcon name="catalog" /></span><span>目录</span>
           </button>
           <button class="func-btn" @click="toggleNightMode">
-            <span class="func-icon">{{ settings.nightMode ? '☀️' : '🌙' }}</span>
+            <span class="func-icon"><SvgIcon :name="settings.nightMode ? 'sun' : 'moon'" /></span>
             <span>{{ settings.nightMode ? '日间' : '夜间' }}</span>
           </button>
           <button class="func-btn" @click="showSettings = !showSettings">
-            <span class="func-icon">⚙️</span><span>设置</span>
+            <span class="func-icon"><SvgIcon name="settings" /></span><span>设置</span>
           </button>
         </div>
       </div>
@@ -111,7 +111,7 @@
         </div>
         <div class="settings-row extra-row">
           <button class="func-btn-lg" @click="toggleAutoRead">
-            <span class="func-icon">{{ autoReading ? '⏸' : '▶️' }}</span>
+            <span class="func-icon"><SvgIcon :name="autoReading ? 'pause' : 'play'" /></span>
             <span>{{ autoReading ? '暂停' : '自动阅读' }}</span>
           </button>
           <div class="auto-mode-switch">
@@ -131,6 +131,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { getChapterText, calcProgress } from '../utils/chapterParser.js'
 import { getSettings, saveSettings, THEMES, LINE_HEIGHT_PRESETS, FONT_FAMILIES, updateProgress, flushProgress } from '../utils/bookStore.js'
+import SvgIcon from './SvgIcon.vue'
 
 const props = defineProps({
   book: { type: Object, required: true }
@@ -811,7 +812,7 @@ onUnmounted(() => {
 .func-row { display: flex; justify-content: space-around; }
 .func-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; color: #ccc; font-size: 11px; cursor: pointer; padding: 4px 12px; }
 .func-btn:hover { color: #fff; }
-.func-icon { font-size: 20px; }
+.func-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; color: inherit; }
 
 .catalog-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 50; }
 .catalog-panel { position: absolute; left: 0; top: 0; bottom: 0; width: 320px; max-width: 80vw; background: #fff; box-shadow: 4px 0 16px rgba(0,0,0,0.2); display: flex; flex-direction: column; }

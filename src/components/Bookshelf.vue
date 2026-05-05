@@ -2,7 +2,7 @@
   <div class="bookshelf" :class="{ 'night-mode': nightMode }">
     <!-- 顶部栏 -->
     <header class="shelf-header">
-      <h1 class="shelf-title">📚 我的书架</h1>
+      <h1 class="shelf-title"><SvgIcon name="bookshelf" :size="22" /> 我的书架</h1>
       <div class="shelf-actions">
         <div class="sort-select">
           <select v-model="sortBy" @change="onSortChange">
@@ -41,7 +41,7 @@
 
     <!-- 空状态 -->
     <div class="empty-shelf" v-else>
-      <div class="empty-icon">📖</div>
+      <div class="empty-icon"><SvgIcon name="book-open" :size="72" /></div>
       <p class="empty-text">书架空空如也</p>
       <p class="empty-hint">点击右上角「添加书籍」开始阅读之旅</p>
     </div>
@@ -61,6 +61,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getSortedBooks, deleteBook, formatTime, SORT_OPTIONS } from '../utils/bookStore.js'
+import SvgIcon from './SvgIcon.vue'
 
 const props = defineProps({
   nightMode: Boolean
@@ -173,6 +174,9 @@ onUnmounted(() => {
   font-size: 22px;
   font-weight: 700;
   color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .night-mode .shelf-title {
@@ -304,9 +308,11 @@ onUnmounted(() => {
 }
 
 .empty-icon {
-  font-size: 72px;
+  display: flex;
+  justify-content: center;
   opacity: 0.5;
   margin-bottom: 16px;
+  color: #999;
 }
 
 .empty-text {
