@@ -519,9 +519,11 @@ function updateClock() {
 }
 
 // ========== 初始化 ==========
+let clockTimer = null
+
 onMounted(() => {
   updateClock()
-  const clockTimer = setInterval(updateClock, 10000)
+  clockTimer = setInterval(updateClock, 10000)
   document.addEventListener('keydown', onKeyDown)
 
   // 首次渲染：恢复阅读位置
@@ -531,14 +533,13 @@ onMounted(() => {
     // 给 DOM 一点时间完成渲染再开启滚动追踪
     setTimeout(() => { isRestoring = false }, 300)
   })
+})
 
-  onUnmounted(() => {
-    renderCancelToken.cancelled = true
-    clearInterval(clockTimer)
-    stopAutoRead()
-    flushProgress()
-    document.removeEventListener('keydown', onKeyDown)
-  })
+onUnmounted(() => {
+  clearInterval(clockTimer)
+  stopAutoRead()
+  flushProgress()
+  document.removeEventListener('keydown', onKeyDown)
 })
 </script>
 
@@ -563,11 +564,8 @@ onMounted(() => {
   color: v-bind('settings.nightMode ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.2)"');
   pointer-events: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.reader-scroll { flex: 1; overflow-y: auto; scroll-behavior: auto; }
-.reader-scroll::-webkit-scrollbar { width: 6px; }
-.reader-scroll::-webkit-scrollbar-track { background: transparent; }
-.reader-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
-.night-mode .reader-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); }
+.reader-scroll { flex: 1; overflow-y: auto; scroll-behavior: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.reader-scroll::-webkit-scrollbar { display: none; }
 .reader-content { max-width: 800px; margin: 0 auto; word-wrap: break-word; text-align: justify; user-select: text; }
 
 /* 章节块 */
