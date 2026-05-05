@@ -42,7 +42,7 @@
           <button class="bar-btn" @click="nextChapter" :disabled="currentChapterIndex >= totalChapters - 1">下一章</button>
         </div>
         <div class="bar-row func-row">
-          <button class="func-btn" @click="showCatalog = true">
+          <button class="func-btn" @click="openCatalog">
             <span class="func-icon">📋</span><span>目录</span>
           </button>
           <button class="func-btn" @click="toggleNightMode">
@@ -64,7 +64,7 @@
             <h3>目录</h3>
             <button class="close-btn" @click="showCatalog = false">✕</button>
           </div>
-          <div class="catalog-list">
+          <div class="catalog-list" ref="catalogList">
             <div v-for="(ch, i) in chapters" :key="i"
               class="catalog-item" :class="{ active: i === currentChapterIndex }"
               @click="jumpToChapter(i)">
@@ -143,9 +143,11 @@ const progress = ref(props.book.progress || 0)
 const sliderChapter = ref(props.book.currentChapterIndex || 0)
 const scrollArea = ref(null)
 const contentEl = ref(null)
+const catalogList = ref(null)
 const currentChapterIndex = ref(props.book.currentChapterIndex || 0)
 
 let autoReadTimer = null
+let autoReadRaf = null
 
 // ========== 滑动窗口渲染 ==========
 // 渲染窗口：[rangeStart, rangeEnd] 闭区间
@@ -437,6 +439,18 @@ function restorePosition() {
   rebuildWindow(savedChapterIndex, savedScrollRatio)
 }
 
+// ========== 目录 ==========
+function openCatalog() {
+  showCatalog.value = true
+  nextTick(() => {
+    if (!catalogList.value) return
+    const activeEl = catalogList.value.querySelector('.catalog-item.active')
+    if (activeEl) {
+      activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }
+  })
+}
+
 // ========== 章节跳转 ==========
 function jumpToChapter(index) {
   if (index < 0 || index >= totalChapters.value) return
@@ -470,18 +484,33 @@ function toggleNightMode() {
   }
   onSettingsChange()
 }
-function onSettingsChange() { saveSettings(settings.value); if (autoReading.value) startAutoRead() }
+function onSettingsChange() { saveSettings(settings.value) }
 
 // ========== 自动阅读 ==========
 function toggleAutoRead() { autoReading.value = !autoReading.value; autoReading.value ? startAutoRead() : stopAutoRead() }
 function startAutoRead() {
   stopAutoRead()
-  const interval = 1000 / (settings.value.autoReadSpeed || 3)
-  autoReadTimer = setInterval(() => {
-    scrollArea.value?.scrollBy({ top: settings.value.fontSize * settings.value.lineHeight, behavior: 'auto' })
-  }, interval)
+  // 每帧滚动的像素数，根据速度级别（1-10）映射到 0.3~3 px/frame
+  function getPixelsPerFrame() {
+    const speed = settings.value.autoReadSpeed || 3
+    return 0.3 + (speed - 1) * (2.7 / 9)
+  }
+  let accumulated = 0
+  function tick() {
+    if (!scrollArea.value) return
+    accumulated += getPixelsPerFrame()
+    if (accumulated >= 1) {
+      const px = Math.floor(accumulated)
+      scrollArea.value.scrollTop += px
+      accumulated -= px
+    }
+    autoReadRaf = requestAnimationFrame(tick)
+  }
+  autoReadRaf = requestAnimationFrame(tick)
 }
-function stopAutoRead() { if (autoReadTimer) { clearInterval(autoReadTimer); autoReadTimer = null } }
+function stopAutoRead() {
+  if (autoReadRaf) { cancelAnimationFrame(autoReadRaf); autoReadRaf = null }
+}
 
 // ========== 交互 ==========
 function onReaderClick(e) {
@@ -491,9 +520,9 @@ function onReaderClick(e) {
     showBars.value = !showBars.value
     if (!showBars.value) closeSubPanels()
   } else if (zone <= 0.25) {
-    scrollArea.value?.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'auto' })
+    scrollArea.value?.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'smooth' })
   } else {
-    scrollArea.value?.scrollBy({ top: scrollArea.value.clientHeight * 0.8, behavior: 'auto' })
+    scrollArea.value?.scrollBy({ top: scrollArea.value.clientHeight * 0.8, behavior: 'smooth' })
   }
 }
 function closeSubPanels() { showSettings.value = false; showMoreSpacing.value = false }
@@ -501,8 +530,8 @@ function closeSubPanels() { showSettings.value = false; showMoreSpacing.value = 
 // ========== 键盘快捷键 ==========
 function onKeyDown(e) {
   switch (e.key) {
-    case 'ArrowLeft': case 'ArrowUp': scrollArea.value?.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'auto' }); e.preventDefault(); break
-    case 'ArrowRight': case 'ArrowDown': case ' ': scrollArea.value?.scrollBy({ top: scrollArea.value.clientHeight * 0.8, behavior: 'auto' }); e.preventDefault(); break
+    case 'ArrowLeft': case 'ArrowUp': scrollArea.value?.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'smooth' }); e.preventDefault(); break
+    case 'ArrowRight': case 'ArrowDown': case ' ': scrollArea.value?.scrollBy({ top: scrollArea.value.clientHeight * 0.8, behavior: 'smooth' }); e.preventDefault(); break
     case 'Escape': handleEscape(); e.preventDefault(); break
   }
 }

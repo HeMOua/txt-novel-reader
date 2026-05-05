@@ -9,13 +9,12 @@
 
 // 章节匹配正则列表，按优先级排序
 const CHAPTER_PATTERNS = [
-  /^[\s]*第[零一二三四五六七八九十百千万〇０-９0-9]{1,7}章\s*.+/,
-  /^[\s]*第[零一二三四五六七八九十百千万〇０-９0-9]{1,7}回\s*.+/,
-  /^[\s]*第[零一二三四五六七八九十百千万〇０-９0-9]{1,7}节\s*.+/,
-  /^[\s]*第[零一二三四五六七八九十百千万〇０-９0-9]{1,7}卷\s*.+/,
-  /^[\s]*卷[零一二三四五六七八九十百千万〇０-９0-9]{1,7}\s*.+/,
-  /^[\s]*[Cc]hapter\s+\d+[\s:：]*.{1,50}/,
-  /^[\s]*\d{1,5}[\s.、．]\s*.{2,40}$/,
+  /^[\s]*第[零一二三四五六七八九十百千万〇０-９0-9]{1,7}章[\s　]*.{0,50}$/,
+  /^[\s]*第[零一二三四五六七八九十百千万〇０-９0-9]{1,7}回[\s　]*.{0,50}$/,
+  /^[\s]*第[零一二三四五六七八九十百千万〇０-９0-9]{1,7}节[\s　]*.{0,50}$/,
+  /^[\s]*第[零一二三四五六七八九十百千万〇０-９0-9]{1,7}卷[\s　]*.{0,50}$/,
+  /^[\s]*卷[零一二三四五六七八九十百千万〇０-９0-9]{1,7}[\s　]*.{0,50}$/,
+  /^[\s]*[Cc]hapter\s+\d+[\s:：]*.{0,50}$/,
   /^[\s]*【.{1,40}】[\s]*$/,
   /^[\s]*［.{1,40}］[\s]*$/,
 ]
@@ -111,7 +110,13 @@ export function buildChapterIndex(fullText) {
  * @returns {string}
  */
 export function getChapterText(fullText, chapterMeta) {
-  return fullText.slice(chapterMeta.start, chapterMeta.end)
+  const raw = fullText.slice(chapterMeta.start, chapterMeta.end)
+  // 跳过第一行（章节标题行），只返回正文内容
+  // 前言（title==='前言'）没有独立标题行，直接返回全文
+  if (chapterMeta.title === '前言' || chapterMeta.title === '全文') return raw
+  const newlineIdx = raw.indexOf('\n')
+  if (newlineIdx === -1) return ''
+  return raw.slice(newlineIdx + 1)
 }
 
 /**

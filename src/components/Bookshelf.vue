@@ -66,12 +66,16 @@ const props = defineProps({
   nightMode: Boolean
 })
 
-const emit = defineEmits(['add-book', 'open-book'])
+const emit = defineEmits(['add-book', 'open-book', 'refresh'])
 
 const sortBy = ref('lastRead')
 const contextMenu = ref({ visible: false, x: 0, y: 0, book: null })
+const refreshKey = ref(0)  // 用于手动触发 computed 刷新
 
-const books = computed(() => getSortedBooks(sortBy.value))
+const books = computed(() => {
+  refreshKey.value  // 依赖追踪，refreshKey 变化时重新计算
+  return getSortedBooks(sortBy.value)
+})
 
 // 封面颜色池
 const COVER_COLORS = [
@@ -118,6 +122,7 @@ function onOpenBook() {
 function onDeleteBook() {
   if (contextMenu.value.book && confirm(`确定删除「${contextMenu.value.book.fileName}」？`)) {
     deleteBook(contextMenu.value.book.filePath)
+    refreshKey.value++  // 触发 computed 重新计算，刷新书架
   }
   contextMenu.value.visible = false
 }
