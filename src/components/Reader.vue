@@ -5,13 +5,21 @@
     :style="readerStyle"
     @click="onReaderClick"
   >
-    <!-- 阅读内容区域：滑动窗口多章渲染 -->
+    <!-- 阅读内容区域：滚动模式或翻页模式 -->
     <ReaderContent
+      v-if="!isPaged"
       ref="readerContentRef"
       :content-style="contentStyle"
       :night-mode="settings.nightMode"
       :paragraph-spacing="settings.paragraphSpacing"
       @scroll="onScroll"
+    />
+    <PagedContent
+      v-else
+      ref="pagedRef"
+      :viewport-style="viewportStyle"
+      :night-mode="settings.nightMode"
+      :paragraph-spacing="settings.paragraphSpacing"
     />
 
     <!-- 常驻左上角章节信息 -->
@@ -130,6 +138,7 @@ import { getSettings, saveSettings, THEMES, LINE_HEIGHT_PRESETS, FONT_FAMILIES }
 
 // 阅读器子组件
 import ReaderContent from '@/modules/reader/components/ReaderContent.vue'
+import PagedContent from '@/modules/reader/components/PagedContent.vue'
 import ReaderInfoBar from '@/modules/reader/components/ReaderInfoBar.vue'
 import ReaderTopBar from '@/modules/reader/components/ReaderTopBar.vue'
 import AutoReadPanel from '@/modules/reader/components/AutoReadPanel.vue'
@@ -149,6 +158,7 @@ import { useKeyboard } from '@/composables/useKeyboard'
 import { useProgress } from '@/composables/useProgress'
 import { useChapterRenderer } from '@/composables/useChapterRenderer'
 import { useAutoRead } from '@/composables/useAutoRead'
+import { usePagedReader } from '@/composables/usePagedReader'
 
 const props = defineProps({
   book: { type: Object, required: true }
@@ -182,6 +192,16 @@ const readerContentRef = ref(null)
 const scrollArea = ref(null)
 const contentEl = ref(null)
 const currentChapterIndex = ref(props.book.currentChapterIndex || 0)
+
+// ========== 翻页模式状态 ==========
+const isPaged = computed(() => settings.value.readingMode === 'paged')
+const pagedRef = ref(null)
+const pagedViewport = ref(null)
+const pagedBaseLayer = ref(null)
+const pagedBaseFlow = ref(null)
+const pagedCoverMask = ref(null)
+const pagedIncomingLayer = ref(null)
+const pagedIncomingFlow = ref(null)
 
 // ========== 设置 ==========
 const settings = ref(getSettings())
@@ -231,6 +251,18 @@ const contentStyle = computed(() => {
   }
 })
 
+const viewportStyle = computed(() => {
+  const ff = FONT_FAMILIES.find(f => f.id === settings.value.fontFamily)
+  return {
+    fontSize: settings.value.fontSize + 'px',
+    fontFamily: ff ? ff.value : '',
+    lineHeight: settings.value.lineHeight,
+    paddingLeft: (settings.value.leftMargin || 0) + 'px',
+    width: (settings.value.contentWidth || 80) + '%',
+    margin: '0 auto',
+  }
+})
+
 // ========== 章节渲染器 ==========
 const renderer = useChapterRenderer({
   contentEl,
@@ -239,6 +271,20 @@ const renderer = useChapterRenderer({
   fullText,
   currentChapterIndex,
   onChapterChange: (idx) => { currentChapterIndex.value = idx },
+})
+
+// ========== 分页引擎 ==========
+const paged = usePagedReader({
+  viewportEl: pagedViewport,
+  baseLayerEl: pagedBaseLayer,
+  baseFlowEl: pagedBaseFlow,
+  coverMaskEl: pagedCoverMask,
+  incomingLayerEl: pagedIncomingLayer,
+  incomingFlowEl: pagedIncomingFlow,
+  settings,
+  chapters,
+  fullText,
+  currentChapterIndex,
 })
 
 // ========== 进度追踪 ==========
@@ -336,12 +382,38 @@ function restorePosition() {
   renderer.rebuildWindow(savedChapterIndex, savedScrollRatio)
 }
 
+// ========== 翻页操作 ==========
+const MANUAL_TURN_MS = 280
+
+async function pagedNext() {
+  const { atEnd } = await paged.turnNext(MANUAL_TURN_MS)
+  if (!atEnd) afterPagedTurn()
+}
+async function pagedPrev() {
+  const { atStart } = await paged.turnPrev(MANUAL_TURN_MS)
+  if (!atStart) afterPagedTurn()
+}
+function afterPagedTurn() {
+  updatePagedProgress()
+  sliderChapter.value = currentChapterIndex.value
+  saveReadingProgress(paged.pageRatio())
+}
+function updatePagedProgress() {
+  const totalChars = fullText.value.length
+  const chMeta = chapters.value[currentChapterIndex.value]
+  if (totalChars > 0 && chMeta) {
+    const readChars = chMeta.start + paged.pageRatio() * (chMeta.end - chMeta.start)
+    progress.value = Math.min(100, (readChars / totalChars) * 100)
+  }
+}
+
 // ========== 章节跳转 ==========
 function jumpToChapter(index) {
   if (index < 0 || index >= totalChapters.value) return
   currentChapterIndex.value = index
   sliderChapter.value = index
-  renderer.rebuildWindow(index, 0)
+  if (isPaged.value) { paged.layout(0); updatePagedProgress() }
+  else { renderer.rebuildWindow(index, 0) }
 }
 function jumpFromCatalog(index) {
   jumpToChapter(index)
@@ -375,7 +447,13 @@ function toggleNightMode() {
   }
   onSettingsChange()
 }
-function onSettingsChange() { saveSettings(settings.value) }
+function onSettingsChange() {
+  saveSettings(settings.value)
+  if (isPaged.value) {
+    const ratio = paged.pageRatio()
+    nextTick(() => { paged.layout(null, ratio); updatePagedProgress() })
+  }
+}
 function onAutoReadSpeedChange(value) {
   settings.value.autoReadSpeed = value
   onSettingsChange()
@@ -432,14 +510,21 @@ function onReaderClick(e) {
   }
 
   const rect = e.currentTarget.getBoundingClientRect()
-  const zone = (e.clientY - rect.top) / rect.height
-  if (zone > 0.25 && zone < 0.75) {
-    if (autoReading.value) {
-      showAutoRead()
+  const x = (e.clientX - rect.left) / rect.width
+  const y = (e.clientY - rect.top) / rect.height
+  if (isPaged.value) {
+    if (x > 0.33 && x < 0.67) {
+      autoReading.value ? showAutoRead() : showDefaultPanel()
+    } else if (x <= 0.33) {
+      pagedPrev()
     } else {
-      showDefaultPanel()
+      pagedNext()
     }
-  } else if (zone <= 0.25) {
+    return
+  }
+  if (y > 0.25 && y < 0.75) {
+    if (autoReading.value) { showAutoRead() } else { showDefaultPanel() }
+  } else if (y <= 0.25) {
     scrollArea.value?.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'smooth' })
   } else {
     scrollArea.value?.scrollBy({ top: scrollArea.value.clientHeight * 0.8, behavior: 'smooth' })
@@ -462,27 +547,59 @@ function handleEscape() {
 }
 
 useKeyboard({
-  onPrev: () => scrollArea.value?.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'smooth' }),
-  onNext: () => scrollArea.value?.scrollBy({ top: scrollArea.value.clientHeight * 0.8, behavior: 'smooth' }),
+  onPrev: () => isPaged.value
+    ? pagedPrev()
+    : scrollArea.value?.scrollBy({ top: -scrollArea.value.clientHeight * 0.8, behavior: 'smooth' }),
+  onNext: () => isPaged.value
+    ? pagedNext()
+    : scrollArea.value?.scrollBy({ top: scrollArea.value.clientHeight * 0.8, behavior: 'smooth' }),
   onEscape: handleEscape,
 })
 
 // ========== 初始化 ==========
-onMounted(() => {
-  // 从 ReaderContent 子组件取真实滚动/内容 DOM，驱动渲染引擎与自动阅读
-  scrollArea.value = readerContentRef.value?.scrollArea || null
-  contentEl.value = readerContentRef.value?.contentEl || null
+function bindPagedEls() {
+  const c = pagedRef.value
+  if (!c) return
+  pagedViewport.value = c.viewport
+  pagedBaseLayer.value = c.baseLayer
+  pagedBaseFlow.value = c.baseFlow
+  pagedCoverMask.value = c.coverMask
+  pagedIncomingLayer.value = c.incomingLayer
+  pagedIncomingFlow.value = c.incomingFlow
+}
 
+function onPagedResize() {
+  if (!isPaged.value) return
+  const ratio = paged.pageRatio()
+  paged.layout(null, ratio)
+  updatePagedProgress()
+}
+
+onMounted(() => {
   nextTick(() => {
-    renderer.setIsRestoring(true)
-    restorePosition()
-    setTimeout(() => { renderer.setIsRestoring(false) }, 300)
+    const ratio = props.book.currentScrollRatio || 0
+    currentChapterIndex.value = props.book.currentChapterIndex || 0
+    sliderChapter.value = currentChapterIndex.value
+    if (isPaged.value) {
+      bindPagedEls()
+      paged.layout(null, ratio)
+      updatePagedProgress()
+    } else {
+      scrollArea.value = readerContentRef.value?.scrollArea || null
+      contentEl.value = readerContentRef.value?.contentEl || null
+      renderer.setIsRestoring(true)
+      restorePosition()
+      setTimeout(() => { renderer.setIsRestoring(false) }, 300)
+    }
   })
+  window.addEventListener('resize', onPagedResize)
 })
 
 onUnmounted(() => {
   autoRead.stopAutoRead()
   flushReadingProgress()
+  window.removeEventListener('resize', onPagedResize)
+  paged.destroy()
 })
 </script>
 
