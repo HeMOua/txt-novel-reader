@@ -23,6 +23,7 @@ const DEFAULT_SETTINGS = {
   pageTurnMode: 'scroll', // scroll, slide
   autoReadSpeed: 30,      // 自动阅读速度（0~100）
   autoReadMode: 'scroll', // scroll, cover - 自动阅读方式
+  readingMode: 'scroll',  // 'scroll' 滚屏 | 'paged' 翻页
   contentWidth: 80,       // 正文区域宽度占窗口百分比 (40-100)
 }
 
