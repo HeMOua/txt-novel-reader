@@ -112,11 +112,37 @@ export function useAutoRead({ scrollArea, contentEl, settings, autoReading, appe
     let pageStep = computePageStep()
     let pageStart = 0
 
+    // 按"真实行盒边界"计算翻页步长，避免把一行文字横切成两半。
+    // 正文由 <p> 段落组成（含段间距、章节标题等非等高块），无法用理论行高对齐，
+    // 因此用 getClientRects() 量出每一行（含段落内换行）的顶边，
+    // 把下一页顶部吸附到"最接近视口底部的那一行顶边"，使该行完整落入下一页。
     function computePageStep() {
-      const lineH = (settings.value.fontSize || 18) * (settings.value.lineHeight || 1.8)
-      if (!lineH || lineH <= 0) return scrollEl.clientHeight
-      const n = Math.max(1, Math.floor(scrollEl.clientHeight / lineH))
-      return n * lineH
+      const viewH = scrollEl.clientHeight
+      if (!contentEl.value) return viewH
+      const scrollTop = scrollEl.scrollTop
+      const srTop = scrollEl.getBoundingClientRect().top
+      const targetBottom = scrollTop + viewH   // 期望页底（scroll 内容坐标）
+
+      let best = -1
+      const blocks = contentEl.value.querySelectorAll('p, h2')
+      for (const el of blocks) {
+        const rects = el.getClientRects()
+        for (let i = 0; i < rects.length; i++) {
+          const top = rects[i].top - srTop + scrollTop  // 行顶（scroll 内容坐标）
+          // 取落在 (scrollTop, 页底] 区间内、且最靠近页底的行顶
+          if (top > scrollTop + 1 && top <= targetBottom + 0.5 && top > best) {
+            best = top
+          }
+        }
+      }
+
+      // 兜底：测量失败（如单行高于整屏）时退回理论行高取整数行
+      if (best < 0) {
+        const lineH = (settings.value.fontSize || 18) * (settings.value.lineHeight || 1.8)
+        if (!lineH || lineH <= 0) return viewH
+        return Math.max(1, Math.floor(viewH / lineH)) * lineH
+      }
+      return best - scrollTop
     }
 
     function snapshotNextPage() {
