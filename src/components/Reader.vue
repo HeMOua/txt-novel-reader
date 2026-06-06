@@ -300,6 +300,9 @@ const autoRead = useAutoRead({
   settings,
   autoReading,
   appendChapterBelow: renderer.appendChapterBelow,
+  isPaged,
+  pagedTurnNext: (duration) => paged.turnNext(duration),
+  afterPagedTurn,
 })
 
 // ========== 滚动追踪 ==========
