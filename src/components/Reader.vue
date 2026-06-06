@@ -237,31 +237,30 @@ const readerStyle = computed(() => ({
   color: settings.value.nightMode ? '#888' : settings.value.fontColor,
 }))
 
-const contentStyle = computed(() => {
+const baseTextStyle = computed(() => {
   const ff = FONT_FAMILIES.find(f => f.id === settings.value.fontFamily)
   return {
     fontSize: settings.value.fontSize + 'px',
     fontFamily: ff ? ff.value : '',
     lineHeight: settings.value.lineHeight,
-    paddingTop: '24px',
-    paddingBottom: '80px',
-    paddingLeft: settings.value.leftMargin + 'px',
-    paddingRight: settings.value.leftMargin + 'px',
-    width: (settings.value.contentWidth || 80) + '%',
   }
 })
 
-const viewportStyle = computed(() => {
-  const ff = FONT_FAMILIES.find(f => f.id === settings.value.fontFamily)
-  return {
-    fontSize: settings.value.fontSize + 'px',
-    fontFamily: ff ? ff.value : '',
-    lineHeight: settings.value.lineHeight,
-    paddingLeft: (settings.value.leftMargin || 0) + 'px',
-    width: (settings.value.contentWidth || 80) + '%',
-    margin: '0 auto',
-  }
-})
+const contentStyle = computed(() => ({
+  ...baseTextStyle.value,
+  paddingTop: '24px',
+  paddingBottom: '80px',
+  paddingLeft: settings.value.leftMargin + 'px',
+  paddingRight: settings.value.leftMargin + 'px',
+  width: (settings.value.contentWidth || 80) + '%',
+}))
+
+const viewportStyle = computed(() => ({
+  ...baseTextStyle.value,
+  paddingLeft: (settings.value.leftMargin || 0) + 'px',
+  width: (settings.value.contentWidth || 80) + '%',
+  margin: '0 auto',
+}))
 
 // ========== 章节渲染器 ==========
 const renderer = useChapterRenderer({
@@ -386,10 +385,12 @@ function restorePosition() {
 const MANUAL_TURN_MS = 280
 
 async function pagedNext() {
+  if (paged.isAnimating()) return
   const { atEnd } = await paged.turnNext(MANUAL_TURN_MS)
   if (!atEnd) afterPagedTurn()
 }
 async function pagedPrev() {
+  if (paged.isAnimating()) return
   const { atStart } = await paged.turnPrev(MANUAL_TURN_MS)
   if (!atStart) afterPagedTurn()
 }
@@ -495,6 +496,11 @@ watch([showPanelSystem, activeLevel2, showLevel3, showAutoReadPanel], () => {
   }
 })
 
+// 运行时切到翻页模式：等 PagedContent 挂载后重新绑定 DOM 并排版
+watch(isPaged, (val) => {
+  if (val) nextTick(() => { bindPagedEls(); paged.layout(0); updatePagedProgress() })
+})
+
 // ========== 交互点击 ==========
 function onReaderClick(e) {
   if (showAutoReadPanel.value) {
@@ -568,11 +574,16 @@ function bindPagedEls() {
   pagedIncomingFlow.value = c.incomingFlow
 }
 
+let pagedResizeRaf = null
 function onPagedResize() {
-  if (!isPaged.value) return
-  const ratio = paged.pageRatio()
-  paged.layout(null, ratio)
-  updatePagedProgress()
+  if (!isPaged.value || pagedResizeRaf) return
+  pagedResizeRaf = requestAnimationFrame(() => {
+    pagedResizeRaf = null
+    if (!isPaged.value) return
+    const ratio = paged.pageRatio()
+    paged.layout(null, ratio)
+    updatePagedProgress()
+  })
 }
 
 onMounted(() => {
