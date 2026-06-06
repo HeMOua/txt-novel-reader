@@ -10,9 +10,7 @@
     "electron:build": "vite build && electron-builder"
   },
   "dependencies": {
-    "pinia": "^3.0.4",
-    "vue": "^3.4.0",
-    "vue-router": "^4.6.4"
+    "vue": "^3.4.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.0",
