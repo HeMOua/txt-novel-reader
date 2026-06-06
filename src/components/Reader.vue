@@ -6,60 +6,47 @@
     @click="onReaderClick"
   >
     <!-- 阅读内容区域：滑动窗口多章渲染 -->
-    <div class="reader-scroll" ref="scrollArea" @scroll="onScroll">
-      <div class="reader-content" :style="contentStyle" ref="contentEl">
-        <!-- 由 JS 动态管理章节 DOM，不使用 v-for 全量渲染 -->
-      </div>
-    </div>
+    <ReaderContent
+      ref="readerContentRef"
+      :content-style="contentStyle"
+      :night-mode="settings.nightMode"
+      :paragraph-spacing="settings.paragraphSpacing"
+      @scroll="onScroll"
+    />
 
     <!-- 常驻左上角章节信息 -->
     <div class="chapter-label-fixed" v-if="!showAnyPanel">{{ currentChapterLabel }}</div>
 
     <!-- 常驻底部信息栏 -->
-    <footer class="reader-info-bar" v-if="!showAnyPanel">
-      <span class="info-left">{{ Math.round(progress) }}%</span>
-      <span class="info-right">{{ currentTime }}</span>
-    </footer>
+    <ReaderInfoBar
+      v-if="!showAnyPanel"
+      :progress="progress"
+      :current-time="currentTime"
+      :night-mode="settings.nightMode"
+    />
 
     <!-- 顶部栏 - 面板可见时显示 -->
     <transition name="slide-down">
-      <header v-if="showAnyPanel && !showLevel3" class="panel-top-bar" @click.stop>
-        <button class="back-btn" @click="emit('back')">← 返回</button>
-        <span class="top-bar-title">{{ currentChapterLabel }}</span>
-        <span class="top-spacer"></span>
-      </header>
+      <ReaderTopBar
+        v-if="showAnyPanel && !showLevel3"
+        :chapter-label="currentChapterLabel"
+        @back="emit('back')"
+      />
     </transition>
 
-    <!-- ========== 自动阅读专属面板 ========== -->
+    <!-- 自动阅读专属面板 -->
     <transition name="slide-up">
-      <div v-if="showAutoReadPanel" class="auto-read-panel" :class="{ 'panel-wide': isWideWindow }" @click.stop>
-        <div class="arp-speed">
-          <div class="arp-speed-header">
-            <span>阅读速度</span>
-            <span class="speed-value">{{ settings.autoReadSpeed }}</span>
-          </div>
-          <div class="arp-speed-track">
-            <span class="speed-tip">慢</span>
-            <input type="range" min="0" max="100" step="1"
-              v-model.number="settings.autoReadSpeed" @input="onSettingsChange" class="slider" />
-            <span class="speed-tip">快</span>
-          </div>
-        </div>
-        <div class="arp-mode">
-          <div class="arp-mode-item" :class="{ active: settings.autoReadMode === 'scroll' }" @click="setAutoReadMode('scroll')">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M7 10l5-5 5 5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span>滚屏翻页</span>
-          </div>
-          <div class="arp-mode-item" :class="{ active: settings.autoReadMode === 'cover' }" @click="setAutoReadMode('cover')">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/><path d="M10 12h4" stroke-linecap="round"/></svg>
-            <span>覆盖翻页</span>
-          </div>
-        </div>
-        <button class="arp-exit-btn" @click="stopAndExitAutoRead">退出自动阅读</button>
-      </div>
+      <AutoReadPanel
+        v-if="showAutoReadPanel"
+        :settings="settings"
+        :is-wide-window="isWideWindow"
+        @exit="stopAndExitAutoRead"
+        @set-mode="setAutoReadMode"
+        @update:auto-read-speed="onAutoReadSpeedChange"
+      />
     </transition>
 
-    <!-- ========== 二级面板 ========== -->
+    <!-- 二级面板（外层为面板容器，内容按 activeLevel2 切换为子组件） -->
     <transition name="slide-up">
       <div
         v-if="showPanelSystem && activeLevel2 && !showLevel3"
@@ -67,175 +54,72 @@
         :class="['l2-' + activeLevel2, { 'panel-wide': isWideWindow }]"
         @click.stop
       >
-        <!-- 默认二级：章节导航 -->
-        <div v-if="activeLevel2 === 'default'" class="l2-default">
-          <div class="nav-row">
-            <button class="nav-btn" @click="prevChapter" :disabled="currentChapterIndex <= 0">上一章</button>
-            <div class="progress-slider">
-              <input type="range" min="0" :max="Math.max(totalChapters - 1, 0)"
-                v-model.number="sliderChapter" @input="onSliderChange" class="slider" />
-            </div>
-            <button class="nav-btn" @click="nextChapter" :disabled="currentChapterIndex >= totalChapters - 1">下一章</button>
-          </div>
-        </div>
-
-        <!-- 目录二级 -->
-        <div v-if="activeLevel2 === 'catalog'" class="catalog-content">
-          <div class="catalog-tabs">
-            <button v-for="tab in catalogTabs" :key="tab.id"
-              class="cat-tab" :class="{ active: activeCatalogTab === tab.id }"
-              @click="activeCatalogTab = tab.id">{{ tab.name }}</button>
-          </div>
-          <div class="catalog-info-bar">
-            <span class="cat-book-name">{{ bookTitle }}</span>
-            <span class="cat-chapter-count">共 {{ totalChapters }} 章</span>
-            <button class="cat-sort-btn" @click="catalogReverse = !catalogReverse" :title="catalogReverse ? '正序' : '倒序'">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
-                :style="{ transform: catalogReverse ? 'rotate(180deg)' : '' }">
-                <path d="M12 5v14M19 12l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </div>
-          <div class="catalog-list" ref="catalogList">
-            <div v-for="ch in displayChapters" :key="ch.originalIndex"
-              class="catalog-item" :class="{ active: ch.originalIndex === currentChapterIndex }"
-              @click="jumpFromCatalog(ch.originalIndex)">
-              <span class="chapter-index">{{ ch.originalIndex + 1 }}</span>
-              <span class="chapter-title">{{ ch.title }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 夜间二级 -->
-        <div v-if="activeLevel2 === 'night'" class="l2-night">
-          <div class="night-toggle-row">
-            <span class="night-label">夜间模式</span>
-            <div class="toggle-switch" :class="{ on: settings.nightMode }" @click="toggleNightMode">
-              <div class="toggle-thumb"></div>
-            </div>
-          </div>
-          <div class="night-colors">
-            <div v-for="theme in THEMES" :key="theme.id"
-              class="color-card" :class="{ active: settings.theme === theme.id }"
-              @click="setTheme(theme)">
-              <div class="color-swatch" :style="{ background: theme.bgColor }">
-                <svg v-if="settings.theme === theme.id" viewBox="0 0 24 24" width="14" height="14"
-                  fill="none" :stroke="theme.id === 'night' ? '#e67e22' : '#e67e22'" stroke-width="3">
-                  <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </div>
-              <span class="color-name">{{ theme.name }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 设置二级 -->
-        <div v-if="activeLevel2 === 'settings'" class="l2-settings">
-          <!-- 字号 -->
-          <div class="setting-section">
-            <div class="setting-row">
-              <button class="font-ctrl-btn" @click="changeFontSize(-1)">A-</button>
-              <span class="font-size-val">{{ settings.fontSize }}</span>
-              <button class="font-ctrl-btn" @click="changeFontSize(1)">A+</button>
-              <div class="font-family-wrap">
-                <select v-model="settings.fontFamily" @change="onSettingsChange">
-                  <option v-for="f in FONT_FAMILIES" :key="f.id" :value="f.id">{{ f.name }}</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          <!-- 行间距 -->
-          <div class="setting-section">
-            <span class="section-label">行间距</span>
-            <div class="preset-group">
-              <button v-for="preset in LINE_HEIGHT_PRESETS" :key="preset.id"
-                class="preset-btn" :class="{ active: Math.abs(settings.lineHeight - preset.value) < 0.01 }"
-                @click="setLineHeight(preset.value)">{{ preset.name }}</button>
-            </div>
-          </div>
-          <!-- 背景色 -->
-          <div class="setting-section">
-            <span class="section-label">背景色</span>
-            <div class="color-row">
-              <div v-for="theme in THEMES" :key="theme.id"
-                class="color-card-sm" :class="{ active: settings.theme === theme.id }"
-                :style="{ background: theme.bgColor }"
-                @click="setTheme(theme)">
-                <svg v-if="settings.theme === theme.id" viewBox="0 0 24 24" width="12" height="12"
-                  fill="none" stroke="#e67e22" stroke-width="3">
-                  <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </div>
-            </div>
-          </div>
-          <!-- 功能控制 -->
-          <div class="setting-section setting-controls">
-            <div class="control-row">
-              <span>自动阅读</span>
-              <div class="toggle-switch" :class="{ on: autoReading }" @click="startAutoReadFromSettings">
-                <div class="toggle-thumb"></div>
-              </div>
-            </div>
-            <div class="control-row page-mode-trigger" @click="openLevel3">
-              <span>翻页类型</span>
-              <div class="pm-trigger-right">
-                <span class="pm-current">{{ currentPageModeName }}</span>
-                <svg class="pm-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ChapterNavPanel
+          v-if="activeLevel2 === 'default'"
+          :current-chapter-index="currentChapterIndex"
+          :total-chapters="totalChapters"
+          :slider-chapter="sliderChapter"
+          @prev="prevChapter"
+          @next="nextChapter"
+          @slider-change="onSliderChange"
+        />
+        <CatalogPanel
+          v-else-if="activeLevel2 === 'catalog'"
+          :book-title="bookTitle"
+          :total-chapters="totalChapters"
+          :current-chapter-index="currentChapterIndex"
+          :display-chapters="displayChapters"
+          :catalog-tabs="catalogTabs"
+          v-model:active-catalog-tab="activeCatalogTab"
+          v-model:catalog-reverse="catalogReverse"
+          @jump-from-catalog="jumpFromCatalog"
+        />
+        <NightPanel
+          v-else-if="activeLevel2 === 'night'"
+          :night-mode="settings.nightMode"
+          :current-theme="settings.theme"
+          :themes="THEMES"
+          @toggle-night="toggleNightMode"
+          @set-theme="setTheme"
+        />
+        <SettingsPanel
+          v-else-if="activeLevel2 === 'settings'"
+          :settings="settings"
+          :themes="THEMES"
+          :font-families="FONT_FAMILIES"
+          :line-height-presets="LINE_HEIGHT_PRESETS"
+          :auto-reading="autoReading"
+          :current-page-mode-name="currentPageModeName"
+          @change-font-size="changeFontSize"
+          @set-line-height="setLineHeight"
+          @set-theme="setTheme"
+          @change-font-family="changeFontFamily"
+          @start-auto-read="startAutoReadFromSettings"
+          @open-level3="openLevel3"
+        />
       </div>
     </transition>
 
-    <!-- ========== 一级面板 ========== -->
+    <!-- 一级面板 -->
     <transition name="slide-up">
-      <div v-if="showPanelSystem && !autoReading && !showLevel3" class="level1-panel" @click.stop>
-        <button class="l1-btn" :class="{ active: activeLevel2 === 'catalog' }" @click="handleSetLevel2('catalog')">
-          <span class="l1-icon"><SvgIcon name="catalog" :size="22" /></span>
-          <span>目录</span>
-        </button>
-        <button class="l1-btn" :class="{ active: activeLevel2 === 'night' }" @click="handleSetLevel2('night')">
-          <span class="l1-icon"><SvgIcon :name="settings.nightMode ? 'sun' : 'moon'" :size="22" /></span>
-          <span>{{ settings.nightMode ? '日间' : '夜间' }}</span>
-        </button>
-        <button class="l1-btn" :class="{ active: activeLevel2 === 'settings' }" @click="handleSetLevel2('settings')">
-          <span class="l1-icon"><SvgIcon name="settings" :size="22" /></span>
-          <span>设置</span>
-        </button>
-      </div>
+      <Level1Panel
+        v-if="showPanelSystem && !autoReading && !showLevel3"
+        :active-level2="activeLevel2"
+        :night-mode="settings.nightMode"
+        @set-level2="setLevel2"
+      />
     </transition>
 
-    <!-- ========== 三级面板：翻页方式 ========== -->
+    <!-- 三级面板：翻页方式 -->
     <transition name="fade-scale">
-      <div v-if="showLevel3" class="level3-overlay" @click="closeLevel3ToReading">
-        <div class="level3-panel" @click.stop>
-          <div class="l3-header">
-            <button class="l3-back" @click="closeLevel3">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              <span>返回</span>
-            </button>
-            <span class="l3-title">翻页方式</span>
-            <span class="l3-spacer"></span>
-          </div>
-          <div class="l3-grid">
-            <div v-for="mode in pageModes" :key="mode.id"
-              class="pm-card" :class="{ active: settings.autoReadMode === mode.id }"
-              @click="selectPageMode(mode.id)">
-              <div class="pm-card-icon" v-html="mode.icon"></div>
-              <span class="pm-card-name">{{ mode.name }}</span>
-              <svg v-if="settings.autoReadMode === mode.id" class="pm-card-check" viewBox="0 0 24 24" width="16" height="16"
-                fill="none" stroke="#e67e22" stroke-width="2.5">
-                <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </div>
-          </div>
-        </div>
-      </div>
+      <Level3PageMode
+        v-if="showLevel3"
+        :page-modes="pageModes"
+        :current-mode="settings.autoReadMode"
+        @close="closeLevel3"
+        @close-to-reading="closeLevel3ToReading"
+        @select="selectPageMode"
+      />
     </transition>
   </div>
 </template>
@@ -243,7 +127,19 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { getSettings, saveSettings, THEMES, LINE_HEIGHT_PRESETS, FONT_FAMILIES } from '@/utils/bookStore.js'
-import SvgIcon from './SvgIcon.vue'
+
+// 阅读器子组件
+import ReaderContent from '@/modules/reader/components/ReaderContent.vue'
+import ReaderInfoBar from '@/modules/reader/components/ReaderInfoBar.vue'
+import ReaderTopBar from '@/modules/reader/components/ReaderTopBar.vue'
+import AutoReadPanel from '@/modules/reader/components/AutoReadPanel.vue'
+import Level1Panel from '@/modules/reader/components/Level1Panel.vue'
+import ChapterNavPanel from '@/modules/reader/components/ChapterNavPanel.vue'
+import CatalogPanel from '@/modules/reader/components/CatalogPanel.vue'
+import NightPanel from '@/modules/reader/components/NightPanel.vue'
+import SettingsPanel from '@/modules/reader/components/SettingsPanel.vue'
+import Level3PageMode from '@/modules/reader/components/Level3PageMode.vue'
+import { CATALOG_TABS, PAGE_MODES } from '@/modules/reader/constants.js'
 
 // Composables
 import { useClock } from '@/composables/useClock'
@@ -274,28 +170,17 @@ const autoReading = ref(false)
 // ========== 目录状态 ==========
 const activeCatalogTab = ref('catalog')
 const catalogReverse = ref(false)
-
-const catalogTabs = [
-  { id: 'catalog', name: '目录' },
-  { id: 'notes', name: '笔记' },
-  { id: 'bookmarks', name: '书签' },
-]
+const catalogTabs = CATALOG_TABS
 
 // ========== 翻页方式 ==========
-const pageModes = [
-  { id: 'scroll', name: '上下滑动', icon: '<path d="M12 4v16" stroke-linecap="round"/><path d="M7 8l5-5 5 5" stroke-linecap="round" stroke-linejoin="round"/>' },
-  { id: 'cover', name: '左右覆盖', icon: '<rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/><path d="M10 12h4" stroke-linecap="round"/>' },
-  { id: 'real', name: '仿真翻页', icon: '<path d="M4 4c4 0 6 2 8 2s4-2 8-2"/><path d="M4 12c4 0 6 2 8 2s4-2 8-2"/><path d="M4 20c4 0 6-2 8-2s4 2 8 2"/>' },
-  { id: 'none', name: '无动效', icon: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 12h6" stroke-linecap="round"/>' },
-  { id: 'slide', name: '平移翻页', icon: '<rect x="3" y="5" width="12" height="14" rx="1"/><path d="M15 12h6M19 9l3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/>' },
-]
+const pageModes = PAGE_MODES
 
 // ========== 基础状态 ==========
 const progress = ref(props.book.progress || 0)
 const sliderChapter = ref(props.book.currentChapterIndex || 0)
+const readerContentRef = ref(null)
 const scrollArea = ref(null)
 const contentEl = ref(null)
-const catalogList = ref(null)
 const currentChapterIndex = ref(props.book.currentChapterIndex || 0)
 
 // ========== 设置 ==========
@@ -464,7 +349,10 @@ function jumpFromCatalog(index) {
 }
 function prevChapter() { jumpToChapter(currentChapterIndex.value - 1) }
 function nextChapter() { jumpToChapter(currentChapterIndex.value + 1) }
-function onSliderChange() { jumpToChapter(sliderChapter.value) }
+function onSliderChange(value) {
+  sliderChapter.value = Number(value)
+  jumpToChapter(sliderChapter.value)
+}
 
 // ========== 设置 ==========
 function changeFontSize(delta) {
@@ -472,6 +360,7 @@ function changeFontSize(delta) {
   onSettingsChange()
 }
 function setLineHeight(value) { settings.value.lineHeight = value; onSettingsChange() }
+function changeFontFamily(value) { settings.value.fontFamily = value; onSettingsChange() }
 function setTheme(theme) {
   settings.value.theme = theme.id; settings.value.fontColor = theme.fontColor
   settings.value.bgColor = theme.bgColor; settings.value.nightMode = theme.id === 'night'
@@ -487,6 +376,10 @@ function toggleNightMode() {
   onSettingsChange()
 }
 function onSettingsChange() { saveSettings(settings.value) }
+function onAutoReadSpeedChange(value) {
+  settings.value.autoReadSpeed = value
+  onSettingsChange()
+}
 function setAutoReadMode(mode) {
   if (settings.value.autoReadMode === mode) return
   settings.value.autoReadMode = mode
@@ -505,23 +398,6 @@ function stopAndExitAutoRead() {
   autoReading.value = false
   showAutoReadPanel.value = false
   autoRead.stopAutoRead()
-}
-
-/** 切换二级面板（带目录自动滚动） */
-function handleSetLevel2(panel) {
-  setLevel2(panel)
-  if (panel === 'catalog') {
-    nextTick(() => {
-      if (!catalogList.value) return
-      const activeEl = catalogList.value.querySelector('.catalog-item.active')
-      if (activeEl) {
-        const listRect = catalogList.value.getBoundingClientRect()
-        const itemRect = activeEl.getBoundingClientRect()
-        const offset = itemRect.top - listRect.top - (listRect.height / 2) + (itemRect.height / 2)
-        catalogList.value.scrollTop += offset
-      }
-    })
-  }
 }
 
 /** 选择翻页方式 */
@@ -593,6 +469,10 @@ useKeyboard({
 
 // ========== 初始化 ==========
 onMounted(() => {
+  // 从 ReaderContent 子组件取真实滚动/内容 DOM，驱动渲染引擎与自动阅读
+  scrollArea.value = readerContentRef.value?.scrollArea || null
+  contentEl.value = readerContentRef.value?.contentEl || null
+
   nextTick(() => {
     renderer.setIsRestoring(true)
     restorePosition()
@@ -614,36 +494,7 @@ onUnmounted(() => {
   transition: background $duration-slow $easing-default, color $duration-slow $easing-default;
 }
 
-.reader-scroll {
-  flex: 1; overflow-y: auto; scroll-behavior: auto;
-  scrollbar-width: none; -ms-overflow-style: none;
-  &::-webkit-scrollbar { display: none; }
-}
-
-.reader-content {
-  margin: 0 auto; word-wrap: break-word; text-align: justify; user-select: text;
-}
-
-/* 章节块 */
-.chapter-block { margin-bottom: 0; }
-
-.chapter-header {
-  padding: $spacing-2xl 0 $spacing-base;
-  border-bottom: 1px solid v-bind('settings.nightMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"');
-  margin-bottom: $spacing-base;
-}
-
-.chapter-title-inline {
-  font-size: 1.2em; font-weight: 700; text-align: center; color: inherit; opacity: 0.85;
-}
-
-.chapter-body :deep(p) {
-  text-indent: 2em;
-  margin-bottom: v-bind('settings.paragraphSpacing + "px"');
-  line-height: inherit;
-}
-
-/* 常驻信息 */
+/* 常驻左上角章节信息 */
 .chapter-label-fixed {
   position: absolute; top: $spacing-sm; left: $spacing-base;
   font-size: $font-size-sm; z-index: $z-index-info;
@@ -652,59 +503,7 @@ onUnmounted(() => {
   @include text-ellipsis;
 }
 
-.reader-info-bar {
-  position: absolute; bottom: 0; left: 0; right: 0;
-  display: flex; justify-content: space-between;
-  padding: $spacing-xs $spacing-lg;
-  font-size: $font-size-xs;
-  color: v-bind('settings.nightMode ? "#555" : "#bbb"');
-  pointer-events: none; z-index: $z-index-info;
-}
-
-/* ========== 顶部栏 ========== */
-.panel-top-bar {
-  position: absolute; top: 0; left: 0; right: 0; z-index: $z-index-top-bar;
-  display: flex; align-items: center; padding: 10px $spacing-base;
-  background: $color-panel-bg-light; backdrop-filter: blur(10px); color: $color-panel-text;
-}
-
-.back-btn {
-  background: none; border: none; color: $color-panel-text;
-  font-size: $font-size-md; cursor: pointer;
-  padding: $spacing-xs 10px; border-radius: $radius-sm; white-space: nowrap;
-
-  &:hover { background: rgba(255, 255, 255, 0.1); }
-}
-
-.top-bar-title {
-  flex: 1; text-align: center; font-size: $font-size-md;
-  @include text-ellipsis; color: #ccc;
-}
-
-.top-spacer { width: 60px; }
-
-/* ========== 一级面板 ========== */
-.level1-panel {
-  position: absolute; bottom: 0; left: 0; right: 0; z-index: $z-index-panel-1;
-  height: 56px;
-  background: $color-panel-bg-light; backdrop-filter: blur(12px);
-  display: flex; align-items: center; justify-content: space-around;
-  color: #ccc;
-  padding-bottom: env(safe-area-inset-bottom, 0);
-}
-
-.l1-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  @include panel-btn;
-  padding: $spacing-sm $spacing-lg; border-radius: $radius-md;
-
-  &:hover { color: #ddd; background: rgba(255, 255, 255, 0.05); }
-  &.active { color: $color-brand; }
-}
-
-.l1-icon { display: flex; align-items: center; justify-content: center; }
-
-/* ========== 二级面板 — 基础 ========== */
+/* ========== 二级面板容器（内容由子组件渲染） ========== */
 .level2-panel {
   position: absolute; left: 0; right: 0; z-index: $z-index-panel-2;
   @include panel-base;
@@ -722,27 +521,6 @@ onUnmounted(() => {
   padding: 10px $spacing-base 14px;
 }
 
-.nav-row { display: flex; align-items: center; gap: 10px; }
-
-.nav-btn {
-  background: none; border: none; color: #ccc; font-size: $font-size-base;
-  cursor: pointer; padding: $spacing-sm $spacing-md; border-radius: $radius-sm; white-space: nowrap;
-  transition: all $duration-fast $easing-default;
-
-  &:hover { background: rgba(255, 255, 255, 0.08); color: $color-white; }
-  &:disabled { opacity: 0.3; cursor: not-allowed; }
-}
-
-.progress-slider { flex: 1; padding: 0 $spacing-xs; }
-
-.slider {
-  @include slider-track;
-
-  &::-webkit-slider-thumb {
-    @include slider-thumb;
-  }
-}
-
 /* 目录二级 */
 .level2-panel.l2-catalog {
   top: auto;
@@ -756,118 +534,6 @@ onUnmounted(() => {
   }
 }
 
-.catalog-content {
-  flex: 1; min-height: 0;
-  display: flex; flex-direction: column;
-}
-
-.catalog-tabs {
-  display: flex;
-  border-bottom: 1px solid $color-panel-border;
-  padding: 0 $spacing-sm; flex-shrink: 0;
-}
-
-.cat-tab {
-  flex: 1; padding: 10px 0; background: none; border: none;
-  color: #888; font-size: $font-size-md; cursor: pointer;
-  border-bottom: 2px solid transparent; transition: all $duration-normal $easing-default;
-
-  &:hover { color: #bbb; }
-  &.active { @include tab-active; }
-}
-
-.catalog-info-bar {
-  display: flex; align-items: center; gap: $spacing-sm;
-  padding: $spacing-sm $spacing-base; font-size: $font-size-sm; color: #888;
-  border-bottom: 1px solid $color-panel-border; flex-shrink: 0;
-}
-
-.cat-book-name { flex: 1; @include text-ellipsis; }
-.cat-chapter-count { color: #666; }
-
-.cat-sort-btn {
-  background: none; border: none; color: #888; cursor: pointer;
-  padding: $spacing-xs; display: flex; align-items: center;
-  transition: color $duration-fast $easing-default;
-
-  &:hover { color: $color-panel-text; }
-}
-
-.catalog-list {
-  flex: 1; overflow-y: auto; padding: $spacing-xs 0;
-  scrollbar-width: thin; scrollbar-color: #333 transparent;
-
-  &::-webkit-scrollbar { width: 4px; }
-  &::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
-}
-
-.catalog-item {
-  display: flex; align-items: center; padding: 10px $spacing-base;
-  cursor: pointer; font-size: $font-size-md; color: #bbb;
-  transition: background $duration-fast $easing-default;
-
-  &:hover { background: $color-panel-surface-hover; }
-  &.active { @include card-active; }
-}
-
-.chapter-index {
-  width: 36px; font-size: $font-size-sm; color: #666; flex-shrink: 0;
-}
-
-.catalog-item.active .chapter-index { color: $color-brand; }
-
-.chapter-title { flex: 1; min-width: 0; @include text-ellipsis; }
-
-/* 夜间二级 */
-.night-toggle-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: $spacing-sm 0 $spacing-base;
-}
-
-.night-label { font-size: 15px; color: #ddd; }
-
-.toggle-switch {
-  position: relative; width: 44px; height: 24px;
-  background: #444; border-radius: 12px;
-  cursor: pointer; transition: background $duration-slow $easing-default;
-  flex-shrink: 0;
-
-  &.on { background: $color-brand; }
-}
-
-.toggle-thumb {
-  position: absolute; top: 2px; left: 2px;
-  width: 20px; height: 20px; background: $color-white;
-  border-radius: $radius-full; transition: transform $duration-slow $easing-default;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.toggle-switch.on .toggle-thumb { transform: translateX(20px); }
-
-.night-colors {
-  display: flex; gap: $spacing-base; flex-wrap: wrap; justify-content: center;
-  padding: $spacing-sm 0;
-}
-
-.color-card {
-  display: flex; flex-direction: column; align-items: center; gap: $spacing-xs;
-  cursor: pointer; transition: transform $duration-fast $easing-default;
-
-  &:hover { transform: scale(1.05); }
-}
-
-.color-swatch {
-  width: 44px; height: 44px; border-radius: $radius-lg;
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  display: flex; align-items: center; justify-content: center;
-  transition: border-color $duration-normal $easing-default;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
-.color-card.active .color-swatch { border-color: $color-brand; }
-.color-name { font-size: $font-size-xs; color: #888; }
-.color-card.active .color-name { color: $color-brand; }
-
 /* 设置二级 */
 .level2-panel.l2-settings {
   max-width: 400px;
@@ -876,198 +542,5 @@ onUnmounted(() => {
   scrollbar-width: none;
 
   &::-webkit-scrollbar { display: none; }
-}
-
-.setting-section {
-  padding: 10px 0;
-  border-bottom: 1px solid $color-panel-border;
-
-  &:last-child { border-bottom: none; }
-}
-
-.section-label { display: block; font-size: $font-size-sm; color: #888; margin-bottom: $spacing-sm; }
-.setting-row { display: flex; align-items: center; gap: 10px; justify-content: space-around; }
-
-.font-ctrl-btn {
-  width: 38px; height: 38px; border: 1px solid #555; border-radius: $radius-md;
-  background: transparent; color: $color-panel-text; font-size: 15px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: all $duration-fast $easing-default;
-
-  &:hover { background: rgba(255, 255, 255, 0.08); }
-  &:active { background: rgba(255, 255, 255, 0.15); }
-}
-
-.font-size-val {
-  min-width: 28px; text-align: center; font-size: $font-size-lg; font-weight: 600; color: $color-panel-text;
-}
-
-.font-family-wrap select {
-  padding: 7px 10px; border: 1px solid #555; border-radius: $radius-md;
-  background: $color-panel-surface; color: #ddd; font-size: $font-size-base;
-  outline: none; cursor: pointer;
-}
-
-.preset-group { display: flex; gap: $spacing-xs; flex-wrap: wrap; justify-content: space-around; }
-
-.preset-btn {
-  padding: $spacing-sm $spacing-md; border: 1px solid #555; border-radius: $radius-md;
-  background: transparent; color: #bbb; font-size: $font-size-sm;
-  cursor: pointer; transition: all $duration-normal $easing-default;
-
-  &:hover { background: rgba(255, 255, 255, 0.06); color: #ddd; }
-  &.active { background: $color-brand; border-color: $color-brand; color: $color-white; }
-}
-
-.color-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-around; }
-
-.color-card-sm {
-  width: 36px; height: 36px; border-radius: $radius-md;
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: all $duration-normal $easing-default;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
-
-  &:hover { transform: scale(1.08); }
-  &.active { border-color: $color-brand; }
-}
-
-.setting-controls {
-  display: flex; flex-direction: row; gap: $spacing-md;
-  border-bottom: none !important;
-}
-
-.control-row {
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: $font-size-md; color: #ccc;
-}
-
-.page-mode-trigger {
-  cursor: pointer; padding: $spacing-sm 0;
-  transition: color $duration-fast $easing-default;
-
-  &:hover { color: $color-white; }
-}
-
-.pm-trigger-right { display: flex; align-items: center; gap: $spacing-xs; color: #888; }
-.pm-current { font-size: $font-size-base; }
-.pm-arrow { color: #666; }
-
-/* ========== 三级面板 ========== */
-.level3-overlay {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: $color-panel-overlay; z-index: $z-index-overlay;
-  display: flex; align-items: center; justify-content: center;
-}
-
-.level3-panel {
-  width: 100%; max-width: 480px;
-  background: rgba(30, 30, 30, 0.98); backdrop-filter: blur(20px);
-  border-radius: $radius-3xl; color: $color-panel-text;
-  overflow: hidden;
-}
-
-.l3-header {
-  display: flex; align-items: center; padding: $spacing-base $spacing-lg;
-  border-bottom: 1px solid $color-panel-border;
-}
-
-.l3-back {
-  display: flex; align-items: center; gap: $spacing-xs;
-  background: none; border: none; color: $color-brand;
-  font-size: $font-size-md; cursor: pointer; padding: $spacing-xs $spacing-sm;
-  border-radius: $radius-sm; transition: background $duration-fast $easing-default;
-
-  &:hover { background: $color-brand-light; }
-}
-
-.l3-title { flex: 1; text-align: center; font-size: $font-size-lg; font-weight: 600; }
-.l3-spacer { width: 70px; }
-
-.l3-grid {
-  display: flex; flex-wrap: wrap; gap: $spacing-md;
-  justify-content: center; padding: $spacing-xl $spacing-lg $spacing-2xl;
-}
-
-.pm-card {
-  display: flex; flex-direction: column; align-items: center; gap: $spacing-sm;
-  width: 72px; padding: 14px $spacing-xs;
-  background: $color-panel-surface;
-  border: 2px solid rgba(255, 255, 255, 0.08);
-  border-radius: $radius-xl; cursor: pointer;
-  transition: all $duration-normal $easing-default; position: relative;
-
-  &:hover { border-color: rgba(255, 255, 255, 0.2); background: $color-panel-surface-hover; }
-  &.active { border-color: $color-brand; background: $color-brand-light; }
-}
-
-.pm-card-icon {
-  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
-  color: #999;
-}
-
-.pm-card.active .pm-card-icon { color: $color-brand; }
-.pm-card-icon :deep(svg) { width: 100%; height: 100%; }
-.pm-card-name { font-size: $font-size-sm; color: #bbb; white-space: nowrap; }
-.pm-card.active .pm-card-name { color: $color-brand; }
-.pm-card-check { position: absolute; top: $spacing-xs; right: $spacing-xs; }
-
-/* ========== 自动阅读专属面板 ========== */
-.auto-read-panel {
-  position: absolute; bottom: 0; left: 0; right: 0; z-index: $z-index-auto-read;
-  background: $color-panel-bg; backdrop-filter: blur(16px);
-  color: $color-panel-text; padding: 0;
-  padding-bottom: env(safe-area-inset-bottom, 0);
-
-  &.panel-wide {
-    max-width: 480px;
-    margin: 0 auto;
-    border-radius: $radius-2xl $radius-2xl 0 0;
-  }
-}
-
-.arp-speed { padding: $spacing-base $spacing-lg $spacing-md; }
-
-.arp-speed-header {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 10px; font-size: $font-size-base; color: #aaa;
-}
-
-.speed-value { color: $color-brand; font-weight: 600; font-size: $font-size-lg; }
-
-.arp-speed-track { display: flex; align-items: center; gap: 10px; }
-
-.arp-speed-track input[type="range"] {
-  flex: 1; @include slider-track;
-}
-
-.arp-speed-track input[type="range"]::-webkit-slider-thumb {
-  @include slider-thumb(18px);
-}
-
-.speed-tip { font-size: $font-size-xs; color: #666; }
-
-.arp-mode {
-  display: flex; gap: $spacing-sm; padding: 0 $spacing-lg $spacing-base;
-}
-
-.arp-mode-item {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: $spacing-sm;
-  padding: 10px; border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: $radius-lg; cursor: pointer;
-  font-size: $font-size-base; color: #999; transition: all $duration-normal $easing-default;
-
-  &:hover { border-color: rgba(255, 255, 255, 0.25); color: #ddd; }
-  &.active { border-color: $color-brand; background: $color-brand-medium; color: $color-brand; }
-}
-
-.arp-exit-btn {
-  display: block; width: calc(100% - 40px); margin: 0 $spacing-lg $spacing-base;
-  padding: $spacing-md; border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: $radius-lg; background: $color-panel-surface;
-  color: #ccc; font-size: $font-size-md; cursor: pointer;
-  text-align: center; transition: all $duration-normal $easing-default;
-
-  &:hover { background: rgba(255, 255, 255, 0.08); color: $color-white; }
 }
 </style>

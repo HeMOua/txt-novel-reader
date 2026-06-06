@@ -6,7 +6,7 @@
         <span class="font-size-val">{{ settings.fontSize }}</span>
         <button class="font-ctrl-btn" @click="$emit('change-font-size', 1)">A+</button>
         <div class="font-family-wrap">
-          <select :value="settings.fontFamily" @change="$emit('settings-change')">
+          <select :value="settings.fontFamily" @change="$emit('change-font-family', $event.target.value)">
             <option v-for="f in fontFamilies" :key="f.id" :value="f.id">{{ f.name }}</option>
           </select>
         </div>
@@ -64,7 +64,7 @@ defineProps({
   currentPageModeName: { type: String, default: '上下滑动' }
 })
 
-defineEmits(['change-font-size', 'set-line-height', 'set-theme', 'settings-change', 'start-auto-read', 'open-level3'])
+defineEmits(['change-font-size', 'set-line-height', 'set-theme', 'change-font-family', 'start-auto-read', 'open-level3'])
 </script>
 
 <style lang="scss" scoped>

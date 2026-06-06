@@ -27,7 +27,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onMounted } from 'vue'
 
 const props = defineProps({
   bookTitle: { type: String, default: '' },
@@ -45,8 +45,8 @@ const catalogListEl = ref(null)
 
 defineExpose({ catalogListEl })
 
-// 当切换到目录时自动滚动到当前章节
-watch(() => props.currentChapterIndex, () => {
+// 滚动目录列表，使当前章节项居中
+function scrollToActive() {
   nextTick(() => {
     if (!catalogListEl.value) return
     const activeEl = catalogListEl.value.querySelector('.catalog-item.active')
@@ -57,7 +57,11 @@ watch(() => props.currentChapterIndex, () => {
       catalogListEl.value.scrollTop += offset
     }
   })
-})
+}
+
+// 打开目录（组件挂载）即定位到当前章；当前章变化时也跟随
+onMounted(scrollToActive)
+watch(() => props.currentChapterIndex, scrollToActive)
 </script>
 
 <style lang="scss" scoped>

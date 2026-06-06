@@ -7,6 +7,8 @@
 </template>
 
 <script setup>
+import { ref } from 'vue'
+
 defineProps({
   contentStyle: { type: Object, required: true },
   nightMode: { type: Boolean, default: false },
@@ -15,10 +17,11 @@ defineProps({
 
 defineEmits(['scroll'])
 
-defineExpose({
-  scrollArea: () => null,
-  contentEl: () => null,
-})
+// 模板 ref，指向真实滚动容器与内容容器 DOM；父组件通过 expose 取用以驱动渲染引擎
+const scrollArea = ref(null)
+const contentEl = ref(null)
+
+defineExpose({ scrollArea, contentEl })
 </script>
 
 <style lang="scss" scoped>
