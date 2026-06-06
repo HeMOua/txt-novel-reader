@@ -76,6 +76,18 @@ export function useAutoRead({ scrollArea, contentEl, settings, autoReading, appe
     cloneWrap.className = 'cover-clone-wrap'
     mask.appendChild(cloneWrap)
     overlay.appendChild(mask)
+    // 底部遮条：遮住当前页底部被视口裁断的半行，使其只完整出现在下一页（避免“截断 + 重复”）
+    const bottomCover = document.createElement('div')
+    bottomCover.className = 'cover-bottom'
+    Object.assign(bottomCover.style, {
+      position: 'absolute',
+      left: '0', right: '0',
+      top: '0', height: '0',
+      background: maskBg,
+      pointerEvents: 'none',
+      zIndex: '1',
+    })
+    overlay.appendChild(bottomCover)
     const line = document.createElement('div')
     line.className = 'cover-line'
     const lineBorder = settings.value.nightMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)'
@@ -111,6 +123,13 @@ export function useAutoRead({ scrollArea, contentEl, settings, autoReading, appe
     let H = scrollEl.clientHeight
     let pageStep = computePageStep()
     let pageStart = 0
+    updateBottomCover()
+
+    // 底部遮条覆盖 [pageStep, H]：即从下一页起点（被裁那行的顶边）到视口底部
+    function updateBottomCover() {
+      bottomCover.style.top = pageStep + 'px'
+      bottomCover.style.height = Math.max(0, H - pageStep) + 'px'
+    }
 
     // 按"真实行盒边界"计算翻页步长，避免把一行文字横切成两半。
     // 正文由 <p> 段落组成（含段间距、章节标题等非等高块），无法用理论行高对齐，
@@ -188,6 +207,7 @@ export function useAutoRead({ scrollArea, contentEl, settings, autoReading, appe
         requestAnimationFrame(() => {
           H = scrollEl.clientHeight
           pageStep = computePageStep()
+          updateBottomCover()
           syncOverlayBox()
           snapshotNextPage()
           mask.style.height = '0px'
