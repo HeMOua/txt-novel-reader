@@ -20,6 +20,7 @@
       :viewport-style="viewportStyle"
       :night-mode="settings.nightMode"
       :paragraph-spacing="settings.paragraphSpacing"
+      :page-background="settings.nightMode ? '#1a1a1a' : settings.bgColor"
     />
 
     <!-- 常驻左上角章节信息 -->

@@ -70,6 +70,10 @@ export function usePagedReader(o) {
     const colW = Math.max(1, vp.clientWidth - 2 * lm)
     const colH = Math.max(1, vp.clientHeight - V_PAD_TOP - V_PAD_BOTTOM)
     const gap = 2 * lm
+    // 容器必须恰为单列宽，否则多列引擎会把唯一可见列拉伸到整幅宽度，
+    // 使列间距(colW+gap)>翻页 step，导致每页向右累积偏移。
+    flowEl.style.width = colW + 'px'
+    flowEl.style.marginLeft = lm + 'px'
     flowEl.style.columnWidth = colW + 'px'
     flowEl.style.columnGap = gap + 'px'
     flowEl.style.height = colH + 'px'
@@ -119,8 +123,20 @@ export function usePagedReader(o) {
     prepareIncoming()
   }
 
+  /** 翻页时给遮罩前沿（下边缘）加阴影，便于分辨覆盖推进的横线；静止时清除。 */
+  function setCoverEdge(on) {
+    const el = coverMaskEl.value
+    if (!el) return
+    el.style.boxShadow = on
+      ? (settings.value.nightMode
+          ? '0 3px 10px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.22)'
+          : '0 3px 10px rgba(0,0,0,0.28), 0 1px 0 rgba(0,0,0,0.18)')
+      : 'none'
+  }
+
   function cancelAnim() {
     if (raf) { cancelAnimationFrame(raf); raf = null }
+    setCoverEdge(false)
     animating = false
   }
 
@@ -130,11 +146,12 @@ export function usePagedReader(o) {
       const vp = viewportEl.value
       const full = vp ? vp.clientHeight : 0
       const start = performance.now()
+      setCoverEdge(true)
       const tick = (t) => {
         const p = Math.min(1, (t - start) / Math.max(1, duration))
         const h = fromFull ? full * (1 - p) : full * p
         if (coverMaskEl.value) coverMaskEl.value.style.height = h + 'px'
-        if (p >= 1) { raf = null; resolve(); return }
+        if (p >= 1) { raf = null; setCoverEdge(false); resolve(); return }
         raf = requestAnimationFrame(tick)
       }
       raf = requestAnimationFrame(tick)

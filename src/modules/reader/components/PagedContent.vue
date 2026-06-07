@@ -20,6 +20,7 @@ defineProps({
   viewportStyle: { type: Object, required: true },
   nightMode: { type: Boolean, default: false },
   paragraphSpacing: { type: Number, default: 12 },
+  pageBackground: { type: String, default: '#f5f0e8' },
 })
 
 const viewport = ref(null)
@@ -52,8 +53,9 @@ defineExpose({ viewport, baseLayer, baseFlow, coverMask, incomingLayer, incoming
 
 .cover-mask {
   position: absolute; top: 0; left: 0; right: 0; height: 0;
-  overflow: hidden; will-change: height; z-index: 2;
-  background: v-bind('nightMode ? "#1a1a1a" : "transparent"');
+  overflow: hidden; will-change: height, box-shadow; z-index: 2;
+  /* 不透明=页面底色，覆盖时真正盖住底层；下边缘阴影由引擎在动画期间注入 */
+  background: v-bind('pageBackground');
 }
 
 /* incoming 层在遮罩内，仍需与 base 同样的内边距定位 */
