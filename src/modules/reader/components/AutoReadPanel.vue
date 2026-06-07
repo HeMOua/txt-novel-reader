@@ -13,11 +13,11 @@
       </div>
     </div>
     <div class="arp-mode">
-      <div class="arp-mode-item" :class="{ active: settings.autoReadMode === 'scroll' }" @click="$emit('set-mode', 'scroll')">
+      <div class="arp-mode-item" :class="{ active: settings.readingMode === 'scroll' }" @click="$emit('set-mode', 'scroll')">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M7 10l5-5 5 5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>滚屏翻页</span>
       </div>
-      <div class="arp-mode-item" :class="{ active: settings.autoReadMode === 'cover' }" @click="$emit('set-mode', 'cover')">
+      <div class="arp-mode-item" :class="{ active: settings.readingMode === 'paged' }" @click="$emit('set-mode', 'paged')">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/><path d="M10 12h4" stroke-linecap="round"/></svg>
         <span>覆盖翻页</span>
       </div>

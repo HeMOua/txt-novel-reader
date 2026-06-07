@@ -36,7 +36,7 @@
     <!-- 顶部栏 - 面板可见时显示 -->
     <transition name="slide-down">
       <ReaderTopBar
-        v-if="showAnyPanel && !showLevel3"
+        v-if="showAnyPanel"
         :chapter-label="currentChapterLabel"
         @back="emit('back')"
       />
@@ -49,7 +49,7 @@
         :settings="settings"
         :is-wide-window="isWideWindow"
         @exit="stopAndExitAutoRead"
-        @set-mode="setAutoReadMode"
+        @set-mode="setReadingMode"
         @update:auto-read-speed="onAutoReadSpeedChange"
       />
     </transition>
@@ -57,7 +57,7 @@
     <!-- 二级面板（外层为面板容器，内容按 activeLevel2 切换为子组件） -->
     <transition name="slide-up">
       <div
-        v-if="showPanelSystem && activeLevel2 && !showLevel3"
+        v-if="showPanelSystem && activeLevel2"
         class="level2-panel"
         :class="['l2-' + activeLevel2, { 'panel-wide': isWideWindow }]"
         @click.stop
@@ -97,13 +97,12 @@
           :font-families="FONT_FAMILIES"
           :line-height-presets="LINE_HEIGHT_PRESETS"
           :auto-reading="autoReading"
-          :current-page-mode-name="currentPageModeName"
           @change-font-size="changeFontSize"
           @set-line-height="setLineHeight"
           @set-theme="setTheme"
           @change-font-family="changeFontFamily"
           @start-auto-read="startAutoReadFromSettings"
-          @open-level3="openLevel3"
+          @set-reading-mode="setReadingMode"
         />
       </div>
     </transition>
@@ -111,22 +110,10 @@
     <!-- 一级面板 -->
     <transition name="slide-up">
       <Level1Panel
-        v-if="showPanelSystem && !autoReading && !showLevel3"
+        v-if="showPanelSystem && !autoReading"
         :active-level2="activeLevel2"
         :night-mode="settings.nightMode"
         @set-level2="setLevel2"
-      />
-    </transition>
-
-    <!-- 三级面板：翻页方式 -->
-    <transition name="fade-scale">
-      <Level3PageMode
-        v-if="showLevel3"
-        :page-modes="pageModes"
-        :current-mode="settings.autoReadMode"
-        @close="closeLevel3"
-        @close-to-reading="closeLevel3ToReading"
-        @select="selectPageMode"
       />
     </transition>
   </div>
@@ -147,8 +134,7 @@ import ChapterNavPanel from '@/modules/reader/components/ChapterNavPanel.vue'
 import CatalogPanel from '@/modules/reader/components/CatalogPanel.vue'
 import NightPanel from '@/modules/reader/components/NightPanel.vue'
 import SettingsPanel from '@/modules/reader/components/SettingsPanel.vue'
-import Level3PageMode from '@/modules/reader/components/Level3PageMode.vue'
-import { CATALOG_TABS, PAGE_MODES } from '@/modules/reader/constants.js'
+import { CATALOG_TABS } from '@/modules/reader/constants.js'
 
 // Composables
 import { useClock } from '@/composables/useClock'
@@ -169,9 +155,8 @@ const emit = defineEmits(['back'])
 const { currentTime } = useClock()
 const { isWideWindow } = useWindowWidth()
 const {
-  showPanelSystem, activeLevel2, showLevel3, showAutoReadPanel, showAnyPanel,
-  setLevel2, openLevel3, closeLevel3, closeLevel3ToReading,
-  closeAllPanels, showDefaultPanel, showAutoRead, hideAutoRead, hideAllPanels,
+  showPanelSystem, activeLevel2, showAutoReadPanel, showAnyPanel,
+  setLevel2, closeAllPanels, showDefaultPanel, showAutoRead, hideAutoRead, hideAllPanels,
 } = usePanelSystem()
 
 // ========== 自动阅读状态 ==========
@@ -181,9 +166,6 @@ const autoReading = ref(false)
 const activeCatalogTab = ref('catalog')
 const catalogReverse = ref(false)
 const catalogTabs = CATALOG_TABS
-
-// ========== 翻页方式 ==========
-const pageModes = PAGE_MODES
 
 // ========== 基础状态 ==========
 const progress = ref(props.book.progress || 0)
@@ -224,11 +206,6 @@ const displayChapters = computed(() => {
   const list = chapters.value.map((ch, i) => ({ ...ch, originalIndex: i }))
   if (catalogReverse.value) list.reverse()
   return list
-})
-
-const currentPageModeName = computed(() => {
-  const m = pageModes.find(p => p.id === settings.value.autoReadMode)
-  return m ? m.name : '上下滑动'
 })
 
 // ========== 样式 ==========
@@ -359,19 +336,23 @@ function onScroll() {
 }
 
 // ========== 进度保存 ==========
-function saveReadingProgressWithRatio() {
+/** 滚屏模式下当前章内滚动比例（0~1） */
+function currentScrollRatio() {
   const chDom = renderer.chapterDomMap.get(currentChapterIndex.value)
-  let scrollRatio = 0
   if (chDom && scrollArea.value) {
     const chH = chDom.offsetHeight
     const containerH = scrollArea.value.clientHeight
     if (chH > containerH) {
-      scrollRatio = Math.max(0, Math.min(1,
+      return Math.max(0, Math.min(1,
         (scrollArea.value.scrollTop - chDom.offsetTop) / (chH - containerH)
       ))
     }
   }
-  saveReadingProgress(scrollRatio)
+  return 0
+}
+
+function saveReadingProgressWithRatio() {
+  saveReadingProgress(currentScrollRatio())
 }
 
 function restorePosition() {
@@ -462,11 +443,26 @@ function onAutoReadSpeedChange(value) {
   settings.value.autoReadSpeed = value
   onSettingsChange()
 }
-function setAutoReadMode(mode) {
-  if (settings.value.autoReadMode === mode) return
-  settings.value.autoReadMode = mode
-  onSettingsChange()
-  if (autoReading.value) { autoRead.stopAutoRead(); autoRead.startAutoRead() }
+function setReadingMode(mode) {
+  if (settings.value.readingMode === mode) return
+  const wasAuto = autoReading.value
+  if (wasAuto) autoRead.stopAutoRead()
+  // 切换前捕获当前章内位置比例，切换后沿用以保持阅读进度
+  const ratio = isPaged.value ? paged.pageRatio() : currentScrollRatio()
+  settings.value.readingMode = mode
+  saveSettings(settings.value)
+  nextTick(() => {
+    if (isPaged.value) {
+      bindPagedEls()
+      paged.layout(null, ratio)
+      updatePagedProgress()
+    } else {
+      scrollArea.value = readerContentRef.value?.scrollArea || null
+      contentEl.value = readerContentRef.value?.contentEl || null
+      renderer.rebuildWindow(currentChapterIndex.value, ratio)
+    }
+    if (wasAuto) { autoReading.value = true; autoRead.startAutoRead() }
+  })
 }
 
 // ========== 面板交互 ==========
@@ -482,26 +478,15 @@ function stopAndExitAutoRead() {
   autoRead.stopAutoRead()
 }
 
-/** 选择翻页方式 */
-function selectPageMode(modeId) {
-  setAutoReadMode(modeId)
-  closeLevel3ToReading()
-}
-
 // 面板打开时暂停自动阅读
-watch([showPanelSystem, activeLevel2, showLevel3, showAutoReadPanel], () => {
+watch([showPanelSystem, activeLevel2, showAutoReadPanel], () => {
   if (!autoReading.value) return
-  const shouldPause = showPanelSystem.value || showLevel3.value || showAutoReadPanel.value
+  const shouldPause = showPanelSystem.value || showAutoReadPanel.value
   if (shouldPause && !autoRead.autoReadPaused()) {
     autoRead.pauseAutoRead()
   } else if (!shouldPause && autoRead.autoReadPaused()) {
     autoRead.resumeAutoRead()
   }
-})
-
-// 运行时切到翻页模式：等 PagedContent 挂载后重新绑定 DOM 并排版
-watch(isPaged, (val) => {
-  if (val) nextTick(() => { bindPagedEls(); paged.layout(0); updatePagedProgress() })
 })
 
 // ========== 交互点击 ==========
@@ -510,8 +495,6 @@ function onReaderClick(e) {
     showAutoReadPanel.value = false
     return
   }
-
-  if (showLevel3.value) return
 
   if (showPanelSystem.value) {
     hideAllPanels()
@@ -544,8 +527,6 @@ function onReaderClick(e) {
 function handleEscape() {
   if (showAutoReadPanel.value) {
     showAutoReadPanel.value = false
-  } else if (showLevel3.value) {
-    closeLevel3()
   } else if (showPanelSystem.value && activeLevel2.value && activeLevel2.value !== 'default') {
     activeLevel2.value = 'default'
   } else if (showPanelSystem.value) {

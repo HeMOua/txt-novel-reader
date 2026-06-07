@@ -41,13 +41,11 @@
           <div class="toggle-thumb"></div>
         </div>
       </div>
-      <div class="control-row page-mode-trigger" @click="$emit('open-level3')">
-        <span>翻页类型</span>
-        <div class="pm-trigger-right">
-          <span class="pm-current">{{ currentPageModeName }}</span>
-          <svg class="pm-arrow" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+      <div class="control-row">
+        <span>阅读模式</span>
+        <div class="mode-switch">
+          <button :class="{ active: settings.readingMode === 'scroll' }" @click="$emit('set-reading-mode', 'scroll')">滚屏</button>
+          <button :class="{ active: settings.readingMode === 'paged' }" @click="$emit('set-reading-mode', 'paged')">翻页</button>
         </div>
       </div>
     </div>
@@ -60,11 +58,10 @@ defineProps({
   themes: { type: Array, required: true },
   fontFamilies: { type: Array, required: true },
   lineHeightPresets: { type: Array, required: true },
-  autoReading: { type: Boolean, default: false },
-  currentPageModeName: { type: String, default: '上下滑动' }
+  autoReading: { type: Boolean, default: false }
 })
 
-defineEmits(['change-font-size', 'set-line-height', 'set-theme', 'change-font-family', 'start-auto-read', 'open-level3'])
+defineEmits(['change-font-size', 'set-line-height', 'set-theme', 'change-font-family', 'start-auto-read', 'set-reading-mode'])
 </script>
 
 <style lang="scss" scoped>
@@ -132,16 +129,12 @@ defineEmits(['change-font-size', 'set-line-height', 'set-theme', 'change-font-fa
   font-size: $font-size-md; color: #ccc;
 }
 
-.page-mode-trigger {
-  cursor: pointer; padding: $spacing-sm 0;
-  transition: color $duration-fast $easing-default;
-
-  &:hover { color: $color-white; }
+.mode-switch { display: flex; gap: $spacing-xs; }
+.mode-switch button {
+  padding: $spacing-xs $spacing-md; border: 1px solid #555; border-radius: $radius-md;
+  background: transparent; color: #bbb; font-size: $font-size-sm; cursor: pointer;
+  &.active { background: $color-brand; border-color: $color-brand; color: $color-white; }
 }
-
-.pm-trigger-right { display: flex; align-items: center; gap: $spacing-xs; color: #888; }
-.pm-current { font-size: $font-size-base; }
-.pm-arrow { color: #666; }
 
 .toggle-switch {
   position: relative; width: 44px; height: 24px;
