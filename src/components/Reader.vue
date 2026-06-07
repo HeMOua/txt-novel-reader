@@ -281,6 +281,7 @@ const autoRead = useAutoRead({
   isPaged,
   pagedTurnNext: (duration) => paged.turnNext(duration),
   afterPagedTurn,
+  pagedAbort: () => paged.abortTurn(),
 })
 
 // ========== 滚动追踪 ==========

@@ -37,7 +37,7 @@ defineExpose({ viewport, baseLayer, baseFlow, coverMask, incomingLayer, incoming
 .paged-viewport {
   flex: 1; position: relative; overflow: hidden;
   padding: 24px v-bind('($props.viewportStyle.paddingLeft) || "0"') 48px;
-  user-select: text;
+  user-select: none; -webkit-user-select: none;
 }
 
 .paged-layer {

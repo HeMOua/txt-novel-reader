@@ -142,3 +142,26 @@ htmlcov/
 
 # pyenv
 # .python-version
+
+# RepoFleet
+Desktop.ini
+.vscode/
+*.swp
+*.swo
+*~
+.next/
+.nuxt/
+.cache/
+.venv/
+target/
+.gradle/
+*.class
+.build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.dart_tool/
+.flutter-plugins-dependencies
+logs/
+tmp/
+temp/

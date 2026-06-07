@@ -134,15 +134,27 @@ export function usePagedReader(o) {
       : 'none'
   }
 
+  let animResolve = null
+
   function cancelAnim() {
     if (raf) { cancelAnimationFrame(raf); raf = null }
     setCoverEdge(false)
     animating = false
+    // 唤醒被中止的 animateCover，使其 await 立即返回（turnNext/turnPrev 据 animating 判定中止）
+    if (animResolve) { const r = animResolve; animResolve = null; r() }
+  }
+
+  /** 立即中止进行中的翻页动画：恢复显示当前页、收起遮罩。 */
+  function abortTurn() {
+    cancelAnim()
+    if (baseLayerEl.value) setLayerPage(baseLayerEl.value, pageIndex.value)
+    if (coverMaskEl.value) coverMaskEl.value.style.height = '0px'
   }
 
   /** 覆盖动画：遮罩高度从 (fromFull?满:0) 过渡到 (fromFull?0:满)，时长 duration ms */
   function animateCover(fromFull, duration) {
     return new Promise(resolve => {
+      animResolve = resolve
       const vp = viewportEl.value
       const full = vp ? vp.clientHeight : 0
       const start = performance.now()
@@ -151,7 +163,7 @@ export function usePagedReader(o) {
         const p = Math.min(1, (t - start) / Math.max(1, duration))
         const h = fromFull ? full * (1 - p) : full * p
         if (coverMaskEl.value) coverMaskEl.value.style.height = h + 'px'
-        if (p >= 1) { raf = null; setCoverEdge(false); resolve(); return }
+        if (p >= 1) { raf = null; setCoverEdge(false); animResolve = null; resolve(); return }
         raf = requestAnimationFrame(tick)
       }
       raf = requestAnimationFrame(tick)
@@ -168,6 +180,7 @@ export function usePagedReader(o) {
     if (nxt.atEnd) return { atEnd: true }
     animating = true
     await animateCover(false, duration)   // 遮罩 0→满
+    if (!animating) return { atEnd: false }  // 动画被中止：不提交翻页
     if (nxt.crossedChapter) {
       currentChapterIndex.value = nxt.chapterIndex
       layout(0)
@@ -200,6 +213,7 @@ export function usePagedReader(o) {
     const vp = viewportEl.value
     if (coverMaskEl.value && vp) coverMaskEl.value.style.height = vp.clientHeight + 'px'
     await animateCover(true, duration)    // 遮罩 满→0
+    if (!animating) return { atStart: false }  // 动画被中止：不提交翻页
     pageIndex.value = prv.pageIndex
     setLayerPage(baseLayerEl.value, pageIndex.value)
     prepareIncoming()
@@ -214,6 +228,6 @@ export function usePagedReader(o) {
 
   return {
     pageIndex, pageCount, pageRatio, isAnimating,
-    layout, turnNext, turnPrev, prepareIncoming, destroy,
+    layout, turnNext, turnPrev, prepareIncoming, abortTurn, destroy,
   }
 }

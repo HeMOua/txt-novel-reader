@@ -12,8 +12,9 @@ import { ref, watch } from 'vue'
  * @param {Ref<boolean>} options.isPaged - 是否翻页模式
  * @param {Function} options.pagedTurnNext - (durationMs) => Promise<{atEnd}> 翻页引擎翻页
  * @param {Function} options.afterPagedTurn - 翻页后更新进度/保存
+ * @param {Function} options.pagedAbort - 立即中止进行中的翻页动画
  */
-export function useAutoRead({ scrollArea, contentEl, settings, autoReading, appendChapterBelow, isPaged, pagedTurnNext, afterPagedTurn }) {
+export function useAutoRead({ scrollArea, contentEl, settings, autoReading, appendChapterBelow, isPaged, pagedTurnNext, afterPagedTurn, pagedAbort }) {
   let autoReadRaf = null
   let autoReadPaused = false
   let pagedLoopStop = false
@@ -74,6 +75,7 @@ export function useAutoRead({ scrollArea, contentEl, settings, autoReading, appe
   function stopAutoRead() {
     pagedLoopStop = true
     pagedLoopGen++
+    if (pagedAbort) pagedAbort()
     if (autoReadRaf) { cancelAnimationFrame(autoReadRaf); autoReadRaf = null }
     autoReadPaused = false
   }
@@ -86,6 +88,7 @@ export function useAutoRead({ scrollArea, contentEl, settings, autoReading, appe
       autoReadPaused = true
       pagedLoopStop = true
       pagedLoopGen++
+      if (pagedAbort) pagedAbort()
       if (autoReadRaf) { cancelAnimationFrame(autoReadRaf); autoReadRaf = null }
     }
   }
