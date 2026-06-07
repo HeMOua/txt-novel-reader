@@ -17,6 +17,7 @@ export function useAutoRead({ scrollArea, contentEl, settings, autoReading, appe
   let autoReadRaf = null
   let autoReadPaused = false
   let pagedLoopStop = false
+  let pagedLoopGen = 0
 
   function startAutoRead() {
     stopAutoRead()
@@ -58,8 +59,12 @@ export function useAutoRead({ scrollArea, contentEl, settings, autoReading, appe
 
   async function startPagedAutoRead() {
     pagedLoopStop = false
-    while (!pagedLoopStop && autoReading.value) {
+    // 每次启动占用一个新代号；await 期间被重启的旧循环会因代号失配而退出，
+    // 避免 stop→start 序列把已 park 的旧循环“复活”造成双循环。
+    const myGen = ++pagedLoopGen
+    while (!pagedLoopStop && autoReading.value && myGen === pagedLoopGen) {
       const { atEnd } = await pagedTurnNext(dwellMs())
+      if (myGen !== pagedLoopGen) break
       if (atEnd) { autoReading.value = false; break }
       if (pagedLoopStop || !autoReading.value) break
       afterPagedTurn()
@@ -68,6 +73,7 @@ export function useAutoRead({ scrollArea, contentEl, settings, autoReading, appe
 
   function stopAutoRead() {
     pagedLoopStop = true
+    pagedLoopGen++
     if (autoReadRaf) { cancelAnimationFrame(autoReadRaf); autoReadRaf = null }
     autoReadPaused = false
   }
@@ -79,6 +85,7 @@ export function useAutoRead({ scrollArea, contentEl, settings, autoReading, appe
     if (!autoReadPaused) {
       autoReadPaused = true
       pagedLoopStop = true
+      pagedLoopGen++
       if (autoReadRaf) { cancelAnimationFrame(autoReadRaf); autoReadRaf = null }
     }
   }
